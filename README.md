@@ -4,9 +4,9 @@ Google Recorder–style voice recorder as a standalone static PWA — no app sto
 
 **Live:** https://recording.silocitylabs.com
 
-My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **216 KB** (~133 KB transferred with gzip) — roughly **570× smaller**, fully offline once installed, and no store required.
+My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **214 KB** (~133 KB transferred with gzip) — roughly **580× smaller**, fully offline once installed, and no store required.
 
-Optional **Nextcloud** WebDAV backup replaces Google Drive / Google Account sync.
+Optional **Nextcloud** backup is planned (same-origin proxy) — disabled for now because browsers block cross-origin WebDAV (CORS).
 
 ## Features
 
@@ -18,7 +18,7 @@ Optional **Nextcloud** WebDAV backup replaces Google Drive / Google Account sync
 - Crop & remove (saves a copy)
 - Search titles & transcripts
 - Favorites, rename, share / download, delete
-- Optional Nextcloud backup & sync (app password + WebDAV)
+- Nextcloud backup UI present but disabled until a same-origin proxy lands
 - Screen wake lock while recording (Wake Lock API)
 - Screen blackout + optional PIN unlock (browsers can’t record in the background)
 - Installable offline PWA
@@ -31,7 +31,7 @@ Optional **Nextcloud** WebDAV backup replaces Google Drive / Google Account sync
 | Google Recorder (Play Store app size) | ~121 MB |
 | Google Recorder app data (no recordings) | ~4.27 MB |
 | Google Recorder cache | ~11.83 MB |
-| This PWA (all shipped files) | **~216 KB** (0.211 MB) |
+| This PWA (all shipped files) | **~214 KB** (0.209 MB) |
 | Typical transfer (gzip text + icons) | **~133 KB** |
 
 > **Maintainers / agents:** refresh these numbers on **every deploy** that changes shipped assets. See `AGENTS.md` for the measurement command.
@@ -56,14 +56,9 @@ python3 -m http.server 8080
 
 Open http://localhost:8080 — prefer http(s), not `file://`, so the mic, Wake Lock, and service worker work.
 
-## Nextcloud (optional)
+## Nextcloud (deferred)
 
-1. In Nextcloud: **Settings → Security → Devices & sessions → Create new app password**
-2. In the PWA: profile → **Manage Nextcloud** (or Settings → Nextcloud backup & sync)
-3. Enter server URL (e.g. `https://cloud.example.com`), username, app password, folder (default `/Recorder`)
-4. Enable sync and **Test**, then **Save**
-
-Uploads use WebDAV (`remote.php/dav/files/...`). Credentials stay in `localStorage` on your device only.
+Cross-origin WebDAV from this PWA is blocked by browser CORS unless Nextcloud (or a proxy) opts in. The sync buttons stay visible but disabled with an explanation. A same-origin proxy can unlock this later without changing Nextcloud CORS.
 
 ## Limits vs stock Google Recorder
 

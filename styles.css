@@ -721,6 +721,18 @@ button {
 .settings-row.static {
   cursor: default;
 }
+.settings-row.is-disabled,
+.sheet-item.is-disabled,
+.pill-btn.is-disabled,
+.menu-panel > button.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+.menu-panel > button.is-disabled:active,
+.sheet-item.is-disabled:active {
+  background: transparent;
+}
 .settings-label {
   font-size: 1rem;
 }

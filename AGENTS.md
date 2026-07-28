@@ -19,7 +19,7 @@ A **standalone static PWA** that approximates the Google Recorder experience —
 - Feel like stock Google Recorder (layout & behavior), not a novelty widget.
 - Stay tiny (target: well under 500 KB shipped).
 - Work offline after install (service worker) for local recordings.
-- Optional Nextcloud sync instead of Google Drive.
+- Optional Nextcloud sync later (currently disabled UI — CORS); same-origin proxy planned.
 - Deploy from `main` with zero build tooling.
 
 ## Layout (match stock)
