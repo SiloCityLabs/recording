@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#0b0e14" id="themeColor" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="description" content="A fast, offline voice recorder — Google Recorder-style, as a PWA." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Recorder" />
+  <title>Recorder</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    (() => {
+      const t = localStorage.getItem("recorder.theme.v1") || "system";
+      document.documentElement.dataset.theme = ["system", "light", "dark"].includes(t) ? t : "system";
+    })();
+  </script>
+</head>
+<body>
+  <div id="app" class="app" data-view="home">
+    <!-- HOME -->
+    <section class="view view-home" id="viewHome" data-view-panel="home">
+      <header class="home-top">
+        <div class="search-pill" id="searchOpenBtn" role="button" tabindex="0" aria-label="Search recordings">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <span>Search recordings</span>
+        </div>
+        <button type="button" class="avatar-btn" id="profileBtn" aria-label="Account and settings" aria-haspopup="true">
+          <span class="avatar-letter" id="avatarLetter">R</span>
+          <span class="sync-badge" id="syncBadge" title="Cloud sync" hidden>
+            <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
+          </span>
+        </button>
+      </header>
+
+      <div class="home-body">
+        <div class="home-list-wrap">
+          <div class="home-empty" id="homeEmpty" hidden>
+            <p>Record respectfully around others.</p>
+          </div>
+          <div class="recording-list" id="recordingList" aria-label="Recordings"></div>
+        </div>
+        <div class="home-fab-wrap">
+          <button type="button" class="record-fab" id="recordFab" aria-label="Start recording">
+            <span class="record-fab-inner"></span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEARCH -->
+    <section class="view view-search" id="viewSearch" data-view-panel="search" hidden>
+      <header class="search-header">
+        <div class="search-bar">
+          <button type="button" class="icon-btn" id="searchBackBtn" aria-label="Back">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+          </button>
+          <input type="search" id="searchInput" placeholder="Search recordings" autocomplete="off" enterkeyhint="search" />
+          <button type="button" class="icon-btn" id="searchClearBtn" aria-label="Clear" hidden>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+      </header>
+      <div class="recording-list search-results" id="searchResults"></div>
+    </section>
+
+    <!-- RECORDING -->
+    <section class="view view-recording" id="viewRecording" data-view-panel="recording" hidden>
+      <header class="rec-header">
+        <div class="rec-title" id="recTitle">Recording</div>
+        <div class="rec-header-actions">
+          <button type="button" class="icon-btn" id="recBlackoutBtn" aria-label="Blackout screen" title="Blackout">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 16V5a7 7 0 0 1 0 14z"/></svg>
+          </button>
+          <button type="button" class="icon-btn" id="recDiscardBtn" aria-label="Discard recording">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          </button>
+          <button type="button" class="icon-btn" id="recMenuBtn" aria-label="More options" aria-haspopup="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="rec-stage">
+        <div class="viz-card" id="recVizCard">
+          <div class="viz-label" id="recVizLabel">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+            <span>Speech</span>
+          </div>
+          <canvas class="waveform" id="liveWaveform" width="800" height="280" aria-hidden="true"></canvas>
+          <div class="transcript-live" id="liveTranscript" hidden></div>
+          <button type="button" class="lang-pill" id="langPill" hidden>English (US)</button>
+        </div>
+      </div>
+
+      <div class="rec-controls">
+        <div class="view-toggle" role="tablist" aria-label="View mode">
+          <button type="button" class="toggle-btn active" data-rec-view="wave" role="tab" aria-selected="true" aria-label="Waveform">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 12h2v5H3zm4-3h2v8H7zm4-5h2v13h-2zm4 3h2v10h-2zm4-1h2v11h-2z"/></svg>
+          </button>
+          <button type="button" class="toggle-btn" data-rec-view="text" role="tab" aria-selected="false" aria-label="Transcript">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>
+          </button>
+        </div>
+        <div class="timer-row">
+          <span class="rec-dot" id="recDot" aria-hidden="true"></span>
+          <span class="timer" id="recTimer">00:00.0</span>
+        </div>
+        <div class="rec-actions">
+          <button type="button" class="btn btn-secondary" id="pauseBtn">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            <span>Pause</span>
+          </button>
+          <button type="button" class="btn btn-danger" id="stopBtn">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M6 6h12v12H6z"/></svg>
+            <span>Stop</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- DETAIL / PLAYBACK -->
+    <section class="view view-detail" id="viewDetail" data-view-panel="detail" hidden>
+      <header class="detail-header">
+        <button type="button" class="icon-btn" id="detailBackBtn" aria-label="Back">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+        </button>
+        <div class="detail-title" id="detailTitle">Recording</div>
+        <div class="detail-header-actions">
+          <button type="button" class="icon-btn" id="favoriteBtn" aria-label="Favorite" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+          </button>
+          <button type="button" class="icon-btn" id="detailMenuBtn" aria-label="More options" aria-haspopup="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="detail-body">
+        <div class="detail-main">
+          <div class="summary-card" id="summaryCard" hidden>
+            <button type="button" class="summary-head" id="summaryToggle" aria-expanded="true">
+              <span class="summary-head-left">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                Summary
+              </span>
+              <svg class="chevron" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg>
+            </button>
+            <div class="summary-body" id="summaryBody">
+              <ul id="summaryList"></ul>
+              <div class="summary-footer">
+                <span>Locally generated from transcript</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="viz-card detail-viz" id="detailVizCard">
+            <div class="viz-label"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg><span>Speech</span></div>
+            <canvas class="waveform" id="detailWaveform" width="800" height="220" aria-hidden="true"></canvas>
+            <div class="transcript-panel" id="detailTranscript" hidden></div>
+          </div>
+        </div>
+
+        <div class="detail-controls">
+          <div class="view-toggle" role="tablist" aria-label="View mode">
+            <button type="button" class="toggle-btn active" data-detail-view="wave" role="tab" aria-selected="true" aria-label="Waveform">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 12h2v5H3zm4-3h2v8H7zm4-5h2v13h-2zm4 3h2v10h-2zm4-1h2v11h-2z"/></svg>
+            </button>
+            <button type="button" class="toggle-btn" data-detail-view="text" role="tab" aria-selected="false" aria-label="Transcript">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>
+            </button>
+          </div>
+          <div class="seek-row">
+            <input type="range" id="seekBar" min="0" max="1000" value="0" aria-label="Seek" />
+            <div class="seek-times">
+              <span id="playTime">00:00</span>
+              <span id="remainTime">-00:00</span>
+            </div>
+          </div>
+          <div class="play-row">
+            <button type="button" class="round-btn" id="rewindBtn" aria-label="Rewind 5 seconds">
+              <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M12.5 3C17.15 3 21 6.85 21 11.5S17.15 20 12.5 20 4 16.15 4 11.5h2A6.5 6.5 0 1 0 12.5 5v3.5L18 4.5 12.5 0V3z"/><text x="12.5" y="14" text-anchor="middle" fill="currentColor" font-size="7" font-family="sans-serif">5</text></svg>
+            </button>
+            <button type="button" class="btn btn-primary play-btn" id="playBtn">
+              <svg class="icon-play" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+              <svg class="icon-pause" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" hidden><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+              <span id="playBtnLabel">Play</span>
+            </button>
+            <button type="button" class="round-btn" id="forwardBtn" aria-label="Forward 10 seconds">
+              <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M11.5 3C6.85 3 3 6.85 3 11.5S6.85 20 11.5 20 20 16.15 20 11.5h-2A6.5 6.5 0 1 1 11.5 5v3.5L6 4.5 11.5 0V3z"/><text x="11.5" y="14" text-anchor="middle" fill="currentColor" font-size="7" font-family="sans-serif">10</text></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- EDIT / CROP -->
+    <section class="view view-edit" id="viewEdit" data-view-panel="edit" hidden>
+      <header class="edit-header">
+        <button type="button" class="icon-btn" id="editCloseBtn" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+        <div class="edit-header-actions">
+          <button type="button" class="pill-btn outline" id="editUndoBtn">Undo</button>
+          <button type="button" class="pill-btn solid" id="editSaveBtn">Save copy</button>
+        </div>
+      </header>
+      <div class="edit-stage">
+        <div class="viz-card">
+          <div class="viz-label"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg><span>Speech</span></div>
+          <div class="edit-wave-wrap">
+            <canvas class="waveform" id="editWaveform" width="800" height="220" aria-hidden="true"></canvas>
+            <div class="edit-selection" id="editSelection">
+              <div class="edit-handle left" data-handle="start"></div>
+              <div class="edit-handle right" data-handle="end"></div>
+            </div>
+          </div>
+          <div class="edit-crop-actions">
+            <button type="button" class="btn btn-secondary" id="cropKeepBtn">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+              Crop
+            </button>
+            <button type="button" class="btn btn-secondary" id="cropRemoveBtn">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+              Remove
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="detail-controls edit-controls">
+        <div class="seek-row">
+          <input type="range" id="editSeekBar" min="0" max="1000" value="0" aria-label="Seek" />
+          <div class="seek-times">
+            <span id="editPlayTime">00:00</span>
+            <span id="editRemainTime">-00:00</span>
+          </div>
+        </div>
+        <div class="play-row">
+          <button type="button" class="round-btn" id="editRewindBtn" aria-label="Rewind 5 seconds">5</button>
+          <button type="button" class="btn btn-primary play-btn" id="editPlayBtn"><span>Play</span></button>
+          <button type="button" class="round-btn" id="editForwardBtn" aria-label="Forward 10 seconds">10</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view view-settings" id="viewSettings" data-view-panel="settings" hidden>
+      <header class="settings-header">
+        <button type="button" class="icon-btn" id="settingsBackBtn" aria-label="Back">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+        </button>
+        <h1>Settings</h1>
+      </header>
+      <div class="settings-scroll">
+        <h2 class="settings-section">General</h2>
+        <button type="button" class="settings-row" data-settings="nextcloud">
+          <div>
+            <div class="settings-label">Nextcloud backup &amp; sync</div>
+            <div class="settings-sub" id="ncStatus">Off</div>
+          </div>
+        </button>
+        <button type="button" class="settings-row" data-settings="theme">
+          <div>
+            <div class="settings-label">Theme</div>
+            <div class="settings-sub" id="themeSettingLabel">System</div>
+          </div>
+        </button>
+        <div class="settings-row static">
+          <div>
+            <div class="settings-label">Keep screen awake while recording</div>
+            <div class="settings-sub">Uses the Screen Wake Lock API when supported</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="wakeLockToggle" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="settings-row static">
+          <div>
+            <div class="settings-label">Screen blackout</div>
+            <div class="settings-sub">Dim to black during recording (tap to unlock)</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="blackoutToggle" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <button type="button" class="settings-row" data-settings="pin">
+          <div>
+            <div class="settings-label">PIN lock</div>
+            <div class="settings-sub" id="pinStatus">Off</div>
+          </div>
+        </button>
+        <div class="settings-row static">
+          <div>
+            <div class="settings-label">Audio channels</div>
+            <div class="settings-sub">Mono (browser default)</div>
+          </div>
+        </div>
+
+        <h2 class="settings-section">Transcription</h2>
+        <button type="button" class="settings-row" data-settings="lang">
+          <div>
+            <div class="settings-label">Transcription language</div>
+            <div class="settings-sub" id="langSettingLabel">English (US)</div>
+          </div>
+        </button>
+        <div class="settings-row static">
+          <div>
+            <div class="settings-label">Live transcript while recording</div>
+            <div class="settings-sub">Uses the browser Speech Recognition API when available</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="autoTranscribeToggle" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <h2 class="settings-section">About</h2>
+        <a class="settings-row" href="https://silocitylabs.com" target="_blank" rel="noopener noreferrer">
+          <div class="settings-label">Made by SiloCityLabs</div>
+        </a>
+        <a class="settings-row" href="https://github.com/SiloCityLabs/recording" target="_blank" rel="noopener noreferrer">
+          <div class="settings-label">GitHub</div>
+        </a>
+        <div class="settings-row static">
+          <div class="settings-label">Build __BUILD_HASH__</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Profile / account sheet -->
+  <div class="sheet-backdrop" id="profileSheet" hidden>
+    <div class="sheet" role="dialog" aria-label="Account">
+      <button type="button" class="sheet-close icon-btn" id="profileCloseBtn" aria-label="Close">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+      <div class="sheet-avatar" id="sheetAvatar">R</div>
+      <h2 class="sheet-hello" id="sheetHello">Hi there</h2>
+      <button type="button" class="pill-btn outline" id="manageNcBtn">Manage Nextcloud</button>
+      <div class="storage-card">
+        <div class="storage-top">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
+          <span id="storageLabel">Local storage</span>
+        </div>
+        <div class="storage-bar"><div class="storage-fill" id="storageFill"></div></div>
+        <div class="storage-meta" id="storageMeta">—</div>
+      </div>
+      <div class="sheet-list">
+        <button type="button" class="sheet-item" id="syncNowBtn">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+          Sync recordings
+        </button>
+        <button type="button" class="sheet-item" id="openSettingsBtn">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.2 7.2 0 0 0-1.62-.94l-.36-2.54A.48.48 0 0 0 14 2h-4a.48.48 0 0 0-.48.42l-.36 2.54c-.59.22-1.13.54-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.25 8.87a.49.49 0 0 0 .12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.39.3.59.22l2.39-.96c.5.4 1.03.72 1.62.94l.36 2.54c.05.24.24.42.48.42h4c.24 0 .44-.18.48-.42l.36-2.54c.59-.22 1.13-.54 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+          Recorder settings
+        </button>
+        <button type="button" class="sheet-item" id="installBtn" hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          Install app
+        </button>
+      </div>
+      <div class="sheet-footer">
+        <a href="https://silocitylabs.com" target="_blank" rel="noopener noreferrer">SiloCityLabs</a>
+        <span>·</span>
+        <a href="https://github.com/SiloCityLabs/recording" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <span>·</span>
+        <span id="buildHash">Build __BUILD_HASH__</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detail overflow menu -->
+  <div class="menu-backdrop" id="detailMenu" hidden>
+    <div class="menu-panel sheet-like" role="menu">
+      <div class="menu-meta">
+        <div class="menu-title-row">
+          <span id="menuRecTitle">Recording</span>
+          <button type="button" class="icon-btn" id="renameBtn" aria-label="Rename">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          </button>
+        </div>
+        <div class="menu-meta-line" id="menuMetaTime"></div>
+        <div class="menu-meta-line" id="menuMetaSync"></div>
+      </div>
+      <button type="button" role="menuitem" data-action="delete">Delete</button>
+      <button type="button" role="menuitem" data-action="share">Share</button>
+      <button type="button" role="menuitem" data-action="edit">Crop &amp; remove</button>
+      <button type="button" role="menuitem" data-action="search-transcript">Search transcript</button>
+      <button type="button" role="menuitem" data-action="retranscribe">Transcribe again</button>
+      <button type="button" role="menuitem" data-action="sync">Upload to Nextcloud</button>
+      <div class="menu-speed">
+        <span>Playback speed</span>
+        <button type="button" class="pill-btn solid small" id="speedBtn">1×</button>
+      </div>
+      <div class="menu-footer">
+        <div class="menu-footer-row">
+          <a class="menu-link" href="https://silocitylabs.com" target="_blank" rel="noopener noreferrer">Made by SiloCityLabs</a>
+        </div>
+        <div class="menu-footer-row">
+          <a class="menu-link" href="https://github.com/SiloCityLabs/recording" target="_blank" rel="noopener noreferrer">GitHub</a>
+        </div>
+        <div class="menu-footer-row menu-build">Build __BUILD_HASH__</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nextcloud dialog -->
+  <div class="modal-backdrop" id="ncModal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="ncModalTitle">
+      <h2 id="ncModalTitle">Nextcloud sync</h2>
+      <p class="modal-sub">Optional backup via WebDAV. Create an app password in Nextcloud → Security.</p>
+      <label class="field">
+        <span>Server URL</span>
+        <input type="url" id="ncUrl" placeholder="https://cloud.example.com" autocomplete="url" />
+      </label>
+      <label class="field">
+        <span>Username</span>
+        <input type="text" id="ncUser" autocomplete="username" />
+      </label>
+      <label class="field">
+        <span>App password</span>
+        <input type="password" id="ncPass" autocomplete="current-password" />
+      </label>
+      <label class="field">
+        <span>Folder</span>
+        <input type="text" id="ncFolder" value="/Recorder" />
+      </label>
+      <label class="check-row">
+        <input type="checkbox" id="ncEnabled" />
+        <span>Enable sync</span>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="ncTestBtn">Test</button>
+        <button type="button" class="btn btn-secondary" id="ncCancelBtn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="ncSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PIN setup / unlock -->
+  <div class="modal-backdrop" id="pinModal" hidden>
+    <div class="modal pin-modal" role="dialog" aria-labelledby="pinModalTitle">
+      <h2 id="pinModalTitle">Set PIN</h2>
+      <p class="modal-sub" id="pinModalSub">4–8 digits. Used to unlock blackout / app lock.</p>
+      <div class="pin-dots" id="pinDots"></div>
+      <div class="pin-pad" id="pinPad"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="pinCancelBtn">Cancel</button>
+        <button type="button" class="btn btn-secondary" id="pinClearBtn">Clear PIN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Blackout overlay -->
+  <div class="blackout" id="blackout" hidden>
+    <div class="blackout-hint" id="blackoutHint">Recording… tap to unlock</div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <audio id="audioEl" preload="metadata"></audio>
+
+  <script src="db.js" defer></script>
+  <script src="nextcloud.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
