@@ -165,6 +165,10 @@
     // playback
     objectUrl: null,
     seeking: false,
+    cardProgress: {},
+    currentDurationMs: 0,
+    durationProbe: false,
+    durationProbeCleanup: null,
     // edit
     editStart: 0.15,
     editEnd: 0.55,
@@ -194,36 +198,48 @@
     }, 1800);
   }
 
+  // Every clock string in the UI goes through here, so it must never be able to
+  // emit NaN/Infinity even when handed a media element's unresolved duration.
   function formatDuration(ms, withTenths = false) {
     const n = Number(ms);
-    const safe = Number.isFinite(n) && n > 0 ? n : 0;
-    const total = safe / 1000;
+    const total = Number.isFinite(n) && n > 0 ? n / 1000 : 0;
     const m = Math.floor(total / 60);
     const s = Math.floor(total % 60);
+    const mm = Number.isFinite(m) ? String(m).padStart(2, "0") : "00";
+    const ss = Number.isFinite(s) ? String(s).padStart(2, "0") : "00";
     if (withTenths) {
       const t = Math.floor((total % 1) * 10);
-      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${t}`;
+      return `${mm}:${ss}.${Number.isFinite(t) ? t : 0}`;
     }
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${mm}:${ss}`;
   }
 
+  // MediaRecorder webm blobs report duration Infinity (Chromium) or NaN until
+  // metadata resolves, so the persisted durationMs is the authoritative value.
   function audioDurationSec() {
     const d = el.audio.duration;
     if (Number.isFinite(d) && d > 0) return d;
+    const stored = Number(state.currentDurationMs);
+    if (Number.isFinite(stored) && stored > 0) return stored / 1000;
     const rec = state.recordings.find((r) => r.id === state.currentId);
     const ms = Number(rec?.durationMs);
     if (Number.isFinite(ms) && ms > 0) return ms / 1000;
     return 0;
   }
 
+  function audioCurrentSec() {
+    if (state.durationProbe) return 0;
+    const c = Number(el.audio.currentTime);
+    if (!Number.isFinite(c) || c < 0) return 0;
+    const dur = audioDurationSec();
+    return dur > 0 ? Math.min(c, dur) : c;
+  }
+
   function formatTitle(ts) {
     const d = new Date(ts);
-    return d.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
+    const day = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return `${day} at ${time}`;
   }
 
   function formatLongDate(ts) {
@@ -274,6 +290,8 @@
     updateSyncBadge();
   }
 
+  const CLOUD_OFF_SVG = `<svg class="rec-card-cloud" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.27 2 2 3.27l2.72 2.72A6.5 6.5 0 0 0 6 19h11.73l3 3L22 20.73 3.27 2zM6 17a4.5 4.5 0 0 1-.33-8.99l9.99 9.99H6zm13.35-6.96A7.49 7.49 0 0 0 12 4c-1.48 0-2.85.44-4.01 1.17l1.46 1.46A5.4 5.4 0 0 1 12 6a5.5 5.5 0 0 1 5.5 5.5v.5H19a3 3 0 0 1 2.07 5.17l1.42 1.42A5 5 0 0 0 19.35 10.04z"/></svg>`;
+
   function renderList(container, items) {
     container.innerHTML = "";
     let lastMonth = "";
@@ -289,6 +307,7 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "rec-card";
+      btn.dataset.id = rec.id;
       const title = escapeHtml(rec.title || formatTitle(rec.createdAt));
       const date = new Date(rec.createdAt).toLocaleDateString(undefined, {
         weekday: "short",
@@ -296,19 +315,20 @@
         day: "numeric",
       });
       btn.innerHTML = `
-        <div class="rec-card-main">
-          <div class="rec-card-title">
-            <span class="rec-card-title-text">${title}</span>
-            ${rec.favorite ? `<span class="rec-card-star" aria-label="Favorite">★</span>` : ""}
-          </div>
-          <div class="rec-card-date">${date}</div>
-        </div>
-        <div class="rec-card-right">
-          <span class="mini-play" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+        <div class="rec-card-head">
+          ${CLOUD_OFF_SVG}
+          <span class="rec-card-title">${title}</span>
+          ${rec.favorite ? `<span class="rec-card-star" aria-label="Favorite">★</span>` : ""}
+          <span class="rec-card-play" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
           </span>
+        </div>
+        <div class="rec-card-meta">
+          <span class="rec-card-date">${date}</span>
           <span class="rec-card-dur">${formatDuration(rec.durationMs || 0)}</span>
-        </div>`;
+        </div>
+        <div class="rec-card-track"><span class="rec-card-remaining"></span></div>`;
+      applyCardProgress(btn, state.cardProgress[rec.id] || 0);
       btn.addEventListener("click", () => openDetail(rec.id));
       container.appendChild(btn);
     });
@@ -987,6 +1007,7 @@
     const rec = await RecDB.get(id);
     if (!rec) return;
     state.currentId = id;
+    state.currentDurationMs = Number(rec.durationMs) > 0 ? Number(rec.durationMs) : 0;
     stopAudio();
     if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
     state.objectUrl = URL.createObjectURL(rec.blob);
@@ -1004,7 +1025,7 @@
     renderDetailTranscript(rec);
     setDetailView(rec.transcript ? state.detailView : "wave");
     setView("detail");
-    el.audio.addEventListener("loadedmetadata", updatePlayUi, { once: true });
+    updatePlayUi();
     await el.audio.play().then(() => el.audio.pause()).catch(() => {});
     updatePlayUi();
     drawPeaks(el.detailWaveform, rec.peaks, 0);
@@ -1032,9 +1053,52 @@
   }
 
   function stopAudio() {
+    cancelDurationProbe();
     el.audio.pause();
     el.audio.removeAttribute("src");
     el.audio.load();
+  }
+
+  function cancelDurationProbe() {
+    if (state.durationProbeCleanup) state.durationProbeCleanup();
+    state.durationProbeCleanup = null;
+    state.durationProbe = false;
+  }
+
+  // Seeking far past the end forces Chromium to demux the real duration of a
+  // MediaRecorder webm blob; without it audio.duration stays Infinity and
+  // seeking is unreliable for the whole first playback.
+  function probeDuration() {
+    if (state.durationProbe) return;
+    const d = el.audio.duration;
+    if (Number.isFinite(d) && d > 0) return;
+    if (!el.audio.currentSrc && !el.audio.src) return;
+    state.durationProbe = true;
+    const finish = () => {
+      cancelDurationProbe();
+      try {
+        el.audio.currentTime = 0;
+      } catch {
+        /* ignore */
+      }
+      updatePlayUi();
+    };
+    const onDurationChange = () => {
+      if (Number.isFinite(el.audio.duration) && el.audio.duration > 0) finish();
+    };
+    const timer = setTimeout(() => {
+      if (state.durationProbe) finish();
+    }, 2000);
+    state.durationProbeCleanup = () => {
+      clearTimeout(timer);
+      el.audio.removeEventListener("durationchange", onDurationChange);
+    };
+    el.audio.addEventListener("durationchange", onDurationChange);
+    try {
+      el.audio.currentTime = 1e101;
+    } catch {
+      finish();
+    }
   }
 
   function updatePlayUi() {
@@ -1045,18 +1109,32 @@
     if (playIcon) playIcon.hidden = playing;
     if (pauseIcon) pauseIcon.hidden = !playing;
     const dur = audioDurationSec();
-    const cur = Number.isFinite(el.audio.currentTime) ? el.audio.currentTime : 0;
-    if (!state.seeking && dur > 0) {
-      el.seekBar.value = String(Math.round((cur / dur) * 1000));
+    const cur = audioCurrentSec();
+    const ratio = dur > 0 ? Math.max(0, Math.min(1, cur / dur)) : 0;
+    if (!state.seeking) {
+      el.seekBar.value = String(Math.round(ratio * 1000));
     }
     el.playTime.textContent = formatDuration(cur * 1000);
-    el.remainTime.textContent = dur > 0
-      ? `-${formatDuration(Math.max(0, (dur - cur) * 1000))}`
-      : "-00:00";
+    el.remainTime.textContent = `-${formatDuration(Math.max(0, (dur - cur) * 1000))}`;
     const rec = state.recordings.find((r) => r.id === state.currentId);
     if (rec && dur > 0) {
-      drawPeaks(el.detailWaveform, rec.peaks, cur / dur);
+      drawPeaks(el.detailWaveform, rec.peaks, ratio);
+      setCardProgress(state.currentId, ratio);
     }
+  }
+
+  function applyCardProgress(card, ratio) {
+    const remaining = card.querySelector(".rec-card-remaining");
+    if (remaining) remaining.style.left = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+  }
+
+  function setCardProgress(id, ratio) {
+    if (!id) return;
+    const clamped = Math.max(0, Math.min(1, ratio || 0));
+    state.cardProgress[id] = clamped;
+    document
+      .querySelectorAll(`.rec-card[data-id="${id}"]`)
+      .forEach((card) => applyCardProgress(card, clamped));
   }
 
   el.audio.addEventListener("timeupdate", updatePlayUi);
@@ -1064,7 +1142,10 @@
   el.audio.addEventListener("play", updatePlayUi);
   el.audio.addEventListener("pause", updatePlayUi);
   el.audio.addEventListener("durationchange", updatePlayUi);
-  el.audio.addEventListener("loadedmetadata", updatePlayUi);
+  el.audio.addEventListener("loadedmetadata", () => {
+    probeDuration();
+    updatePlayUi();
+  });
 
   /* —— Edit —— */
   async function openEdit() {
@@ -1588,20 +1669,25 @@
     else el.audio.pause();
   });
   el.rewindBtn.addEventListener("click", () => {
-    el.audio.currentTime = Math.max(0, el.audio.currentTime - 5);
+    el.audio.currentTime = Math.max(0, audioCurrentSec() - 5);
     updatePlayUi();
   });
   el.forwardBtn.addEventListener("click", () => {
     const dur = audioDurationSec();
-    el.audio.currentTime = Math.min(dur || el.audio.currentTime + 10, el.audio.currentTime + 10);
+    const next = audioCurrentSec() + 10;
+    el.audio.currentTime = dur > 0 ? Math.min(dur, next) : next;
     updatePlayUi();
   });
   el.seekBar.addEventListener("input", () => {
     state.seeking = true;
   });
   el.seekBar.addEventListener("change", () => {
+    cancelDurationProbe();
     const dur = audioDurationSec();
-    if (dur > 0) el.audio.currentTime = (Number(el.seekBar.value) / 1000) * dur;
+    const ratio = Number(el.seekBar.value) / 1000;
+    if (dur > 0 && Number.isFinite(ratio)) {
+      el.audio.currentTime = Math.max(0, Math.min(1, ratio)) * dur;
+    }
     state.seeking = false;
     updatePlayUi();
   });
