@@ -46,15 +46,15 @@ Optional transcription files are hosted for opt-in download and are **not** incl
 
 ## Deploy
 
-Hosted on GitHub Pages via Actions.
+Hosted on **Cloudflare Pages** (connected to this GitHub repo).
 
 - Repo: https://github.com/SiloCityLabs/recording
 - Custom domain: `recording.silocitylabs.com`
-- Workflow: `.github/workflows/deploy.yml` (deploys on push to `main`)
+- Build command: `make build`
+- Build output directory: `_site`
+- Root directory: `/` (repo root)
 
-DNS should point a CNAME for `recording` → `silocitylabs.github.io`.
-
-In the repo: **Settings → Pages → Source = GitHub Actions**, custom domain set to `recording.silocitylabs.com`, Enforce HTTPS on.
+`make build` runs `scripts/build-site.sh`: stamps `__BUILD_HASH__` from the commit SHA, fetches optional transcription assets if missing, and writes the publish tree to `_site/`.
 
 ## Local preview
 

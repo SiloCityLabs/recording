@@ -11,7 +11,7 @@ A **standalone static PWA** that approximates the Google Recorder experience —
 | **Live** | https://recording.silocitylabs.com |
 | **Repo** | https://github.com/SiloCityLabs/recording |
 | **Stack** | Plain HTML / CSS / JS |
-| **Host** | GitHub Pages via Actions |
+| **Host** | Cloudflare Pages |
 | **License** | CC BY-SA 4.0 |
 
 ## Goals
@@ -21,7 +21,7 @@ A **standalone static PWA** that approximates the Google Recorder experience —
 - Work offline after install (service worker) for local recordings.
 - Optional on-device transcription (opt-in download; never in shell precache).
 - Optional Nextcloud sync later (currently disabled UI — CORS); same-origin proxy planned.
-- Deploy from `main` with zero build tooling.
+- Deploy from `main` via Cloudflare Pages (`make build` → `_site`; no bundler/npm).
 
 ## Layout (match stock)
 
@@ -67,10 +67,11 @@ click that follows a drag must not open the recording.
 | `app.js` | UI, MediaRecorder, waveform, speech, playback, edit, PIN/blackout, wake lock |
 | `sw.js` | Offline cache — shell name stamped with `__BUILD_HASH__`; preserves transcription caches |
 | `optional/transcription/` | Hosted runtime + model for opt-in download (not shell-preached) |
-| `scripts/fetch-transcription-assets.sh` | Downloads / repacks vosk-browser + English model |
-| `.github/workflows/deploy.yml` | Copies static files → Pages artifact; stamps `__BUILD_HASH__`; publishes optional assets |
+| `scripts/fetch-transcription-assets.sh` | Downloads / repacks vosk-browser + per-language models |
+| `scripts/build-site.sh` | Stamps `__BUILD_HASH__`, fetches optional assets, writes `_site/` |
+| `Makefile` | `make build` for Cloudflare Pages |
 | `manifest.webmanifest` | PWA manifest (`display: fullscreen` + `display_override`, `orientation: any`) |
-| `CNAME` | `recording.silocitylabs.com` |
+| `CNAME` | `recording.silocitylabs.com` (kept in artifact; DNS is Cloudflare custom domain) |
 | `icons/` | Circular `any` icons + full-bleed `maskable` icons |
 | `images/icon.png` | Source brand artwork; derive icons from this |
 | `images/screenshots/` | Design reference (phone + tablet) — **do not ship** |
@@ -183,7 +184,7 @@ Deploy workflow runs the fetch script when binaries are missing, then copies `op
 ## Deploy checklist (every meaningful ship)
 
 1. **Update README size numbers** (base shell **and** optional rows if those changed).
-2. Push to `main`; Actions stamps `__BUILD_HASH__` and deploys automatically (SW cache name follows the commit).
+2. Push to `main`; Cloudflare Pages runs `make build` (stamps `__BUILD_HASH__`, fetches optional assets) and publishes `_site/`.
 
 ### README size (required update)
 

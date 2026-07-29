@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Download optional offline-transcription runtime + per-language Vosk models.
-# Not part of the base PWA shell; only fetched when maintainers / CI prepare
-# optional/transcription assets for GitHub Pages hosting.
+# Not part of the base PWA shell; fetched by maintainers or by scripts/build-site.sh
+# during Cloudflare Pages (or local) builds.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
