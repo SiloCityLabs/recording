@@ -4,9 +4,9 @@ Google Recorder–style voice recorder as a standalone static PWA — no app sto
 
 **Live:** https://recording.silocitylabs.com
 
-My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **291 KB** (~152 KB transferred with gzip) — roughly **426× smaller**, fully offline once installed, and no store required.
+My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **306 KB** (~158 KB transferred with gzip) — roughly **406× smaller**, fully offline once installed, and no store required.
 
-Optional **on-device transcription** (Vosk, per-language small models) is available in Settings and downloads only after you opt in (~44–50 MB). Browser and offline transcription are mutually exclusive. Optional **Nextcloud** backup is planned (same-origin proxy) — disabled for now because browsers block cross-origin WebDAV (CORS).
+Optional **on-device transcription** (Vosk) is available in Settings and downloads from free public CDNs only after you opt in (~40–50 MB). Browser and offline transcription are mutually exclusive. Optional **Nextcloud** backup is planned (same-origin proxy) — disabled for now because browsers block cross-origin WebDAV (CORS).
 
 ## Features
 
@@ -33,14 +33,14 @@ Optional **on-device transcription** (Vosk, per-language small models) is availa
 | Google Recorder (Play Store app size) | ~121 MB |
 | Google Recorder app data (no recordings) | ~4.27 MB |
 | Google Recorder cache | ~11.83 MB |
-| This PWA base shell (all shipped shell files) | **~291 KB** (0.284 MB) |
-| Typical base transfer (gzip text + icons) | **~152 KB** |
-| Optional offline transcription runtime (`vosk.js`) | **~5.54 MB** (~2.25 MB gzip) |
-| Optional language model (one of EN/ES/FR/DE) | **~38–44 MB** |
-| Optional download total (runtime + one model) | **~44–50 MB** |
-| Device storage after enabling offline transcription | base shell + ~44–50 MB Cache Storage |
+| This PWA base shell (all shipped shell files) | **~306 KB** (0.299 MB) |
+| Typical base transfer (gzip text + icons) | **~158 KB** |
+| Optional offline transcription runtime (`vosk.js`, from jsDelivr) | **~5.5 MB** |
+| Optional language model (one of EN/ES/FR/DE, from vosk-browser CDN) | **~33–44 MB** |
+| Optional download total (runtime + one model) | **~40–50 MB** |
+| Device storage after enabling offline transcription | base shell + ~40–50 MB Cache Storage |
 
-Optional transcription files are hosted for opt-in download and are **not** included in the base PWA install/precache size. They are fetched only after **Settings → Offline transcription → Download and enable**. Switching transcription language replaces the stored offline model (with confirmation).
+Optional transcription binaries are **not** in the Cloudflare Pages deploy (25 MiB file limit). They download at opt-in from jsDelivr + the vosk-browser GitHub Pages model mirror (CORS-enabled). Switching transcription language replaces the stored offline model (with confirmation).
 
 > **Maintainers / agents:** refresh these numbers on **every deploy** that changes shipped assets. See `AGENTS.md` for the measurement commands (base shell vs optional assets).
 
@@ -54,7 +54,7 @@ Hosted on **Cloudflare Pages** (connected to this GitHub repo).
 - Build output directory: `_site`
 - Root directory: `/` (repo root)
 
-`make build` runs `scripts/build-site.sh`: stamps `__BUILD_HASH__` from the commit SHA, fetches optional transcription assets if missing, and writes the publish tree to `_site/`.
+`make build` runs `scripts/build-site.sh`: stamps `__BUILD_HASH__` from the commit SHA and writes `_site/` (shell + attribution only — no Vosk binaries).
 
 ## Local preview
 
@@ -64,7 +64,7 @@ python3 -m http.server 8080
 
 Open http://localhost:8080 — prefer http(s), not `file://`, so the mic, Wake Lock, and service worker work.
 
-To test offline transcription locally, fetch optional assets once:
+To test offline transcription downloads against a local mirror (optional; production uses CDNs):
 
 ```bash
 ./scripts/fetch-transcription-assets.sh

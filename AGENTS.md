@@ -66,9 +66,9 @@ click that follows a drag must not open the recording.
 | `offline-transcription.js` | Opt-in Vosk model management, PCM conversion, public transcription API |
 | `app.js` | UI, MediaRecorder, waveform, speech, playback, edit, PIN/blackout, wake lock |
 | `sw.js` | Offline cache — shell name stamped with `__BUILD_HASH__`; preserves transcription caches |
-| `optional/transcription/` | Hosted runtime + model for opt-in download (not shell-preached) |
-| `scripts/fetch-transcription-assets.sh` | Downloads / repacks vosk-browser + per-language models |
-| `scripts/build-site.sh` | Stamps `__BUILD_HASH__`, fetches optional assets, writes `_site/` |
+| `optional/transcription/` | Attribution only in deploy; binaries optional local mirror |
+| `scripts/fetch-transcription-assets.sh` | Optional local CDN mirror for `python3 -m http.server` |
+| `scripts/build-site.sh` | Stamps `__BUILD_HASH__`, writes `_site/` (no model binaries) |
 | `Makefile` | `make build` for Cloudflare Pages |
 | `manifest.webmanifest` | PWA manifest (`display: fullscreen` + `display_override`, `orientation: any`) |
 | `CNAME` | `recording.silocitylabs.com` (kept in artifact; DNS is Cloudflare custom domain) |
@@ -128,7 +128,7 @@ Do not fall back from browser → offline within a single recording session.
 | Cache | Purpose |
 |---|---|
 | `recorder-__BUILD_HASH__` | App shell precache (`ASSETS` in `sw.js`) |
-| `recorder-transcription-v1` | Optional runtime + model only |
+| `recorder-transcription-v2` | Optional runtime + model only (CDN downloads) |
 
 Rules:
 
@@ -140,29 +140,30 @@ Rules:
 
 ### Assets & licenses
 
-| Asset | Version | License | Source |
+| Asset | Version | License | Browser download source |
 |---|---|---|---|
-| `vosk.js` | vosk-browser 0.0.8 | Apache-2.0 | https://www.npmjs.com/package/vosk-browser |
-| Per-lang small models | en-us / en-gb / es / fr / de | Apache-2.0 | https://alphacephei.com/vosk/models |
+| `vosk.js` | vosk-browser 0.0.8 | Apache-2.0 | jsDelivr (`cdn.jsdelivr.net/npm/vosk-browser@0.0.8/...`) |
+| Per-lang small models | en-us / es-0.3 / fr-pguyot / de | Apache-2.0 | `ccoreilly.github.io/vosk-browser/models/` (CORS `*`) |
 
-One language model is cached on-device at a time. Settings language picker confirms before replacing a stored model.
+Upstream models are published at https://alphacephei.com/vosk/models but **do not send CORS headers**, so the browser cannot fetch them directly. Do **not** add Cloudflare Workers/Functions to proxy them (billing). Prefer CORS-enabled free mirrors.
 
-Attribution files: `optional/transcription/NOTICE`, `LICENSE-Apache-2.0.txt`, `README.md`.
+One language model is cached on-device at a time. Settings language picker confirms before replacing a stored model. `en-GB` shares the en-US offline model.
 
-Large binaries are **gitignored**. Generate with:
+Attribution files: `optional/transcription/NOTICE`, `LICENSE-Apache-2.0.txt`, `README.md` (copied into `_site`; tiny).
+
+Large binaries are **gitignored** and **not** in the Pages artifact. Optional local mirror:
 
 ```bash
 ./scripts/fetch-transcription-assets.sh
 ```
 
-Deploy workflow runs the fetch script when binaries are missing, then copies `optional/transcription/` into the Pages artifact.
-
 ### Model update procedure
 
-1. Bump model id / URLs in `scripts/fetch-transcription-assets.sh` and `offline-transcription.js`.
-2. Bump optional cache name to `recorder-transcription-v2` (and keep deleting only non-matching old optional caches intentionally, or document a one-time migration).
-3. Re-run the fetch script; update README size rows and `optional/transcription/README.md`.
+1. Point `LANG_MODELS` / CDN URLs in `offline-transcription.js` at a CORS-enabled free host.
+2. Bump optional cache name (`recorder-transcription-vN`) if the cache key layout changes.
+3. Update README size rows and `optional/transcription/README.md`.
 4. Keep Apache-2.0 NOTICE / LICENSE files accurate.
+5. Never ship model/runtime binaries in `_site` (Cloudflare Pages 25 MiB file limit).
 
 ### Transcription behavior notes
 
@@ -184,7 +185,7 @@ Deploy workflow runs the fetch script when binaries are missing, then copies `op
 ## Deploy checklist (every meaningful ship)
 
 1. **Update README size numbers** (base shell **and** optional rows if those changed).
-2. Push to `main`; Cloudflare Pages runs `make build` (stamps `__BUILD_HASH__`, fetches optional assets) and publishes `_site/`.
+2. Push to `main`; Cloudflare Pages runs `make build` (stamps `__BUILD_HASH__`) and publishes `_site/` — static only, no Workers/Functions.
 
 ### README size (required update)
 
@@ -247,7 +248,7 @@ Update both the intro paragraph and the Size table in `README.md`.
 | Offline **before** model installed | No auto-download; Settings still explains opt-in |
 | Interrupt model download | Incomplete assets discarded; retry works |
 | Delete offline model | Cache cleared; preference off; shell untouched |
-| App-shell update with model installed | `recorder-transcription-v1` survives; shell cache rotates |
+| App-shell update with model installed | `recorder-transcription-v2` survives; shell cache rotates |
 | SW update while recording | Reload deferred until save (`applyPendingShellReload`) |
 | Pause / resume recording | Existing speech watchdog / pause behavior unchanged |
 | WebM/Opus local transcription | Decodes → mono 16 kHz → transcript saved |

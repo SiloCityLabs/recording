@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Prepare the static site for Cloudflare Pages (or local preview of a stamped build).
 # Output: _site/  — set Cloudflare "Build output directory" to `_site`.
+# Large Vosk models are NOT shipped; the app downloads them at opt-in time.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,17 +38,18 @@ if [[ -f images/icon.png ]]; then
   cp images/icon.png "$OUT/images/icon.png"
 fi
 
-# Optional offline transcription assets (not in shell precache).
-NEED_FETCH=0
-if [[ ! -f optional/transcription/vosk.js ]]; then NEED_FETCH=1; fi
-for m in vosk-model-small-en-us-0.15 vosk-model-small-en-gb-0.15 vosk-model-small-es-0.42 vosk-model-small-fr-0.22 vosk-model-small-de-0.15; do
-  if [[ ! -f "optional/transcription/${m}.tar.gz" ]]; then NEED_FETCH=1; fi
-done
-if [[ "$NEED_FETCH" = "1" ]]; then
-  chmod +x scripts/fetch-transcription-assets.sh
-  ./scripts/fetch-transcription-assets.sh
-fi
+# Attribution only — no vosk.js / model binaries in the deploy.
 mkdir -p "$OUT/optional/transcription"
-cp -r optional/transcription/. "$OUT/optional/transcription/"
+for f in LICENSE-Apache-2.0.txt NOTICE README.md; do
+  if [[ -f "optional/transcription/$f" ]]; then
+    cp "optional/transcription/$f" "$OUT/optional/transcription/"
+  fi
+done
+
+# Fail the build if anything over Cloudflare Pages' 25 MiB limit sneaks in.
+while IFS= read -r -d '' f; do
+  echo "ERROR: $f exceeds Cloudflare Pages 25 MiB limit" >&2
+  exit 1
+done < <(find "$OUT" -type f -size +25M -print0 2>/dev/null || true)
 
 echo "Built $OUT ($(du -sh "$OUT" | cut -f1))"

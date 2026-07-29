@@ -1,49 +1,60 @@
 /**
  * Optional on-device transcription via vosk-browser + small per-language models.
  * Disabled by default. Runtime/model load only after explicit Settings opt-in.
- * Large assets live under ./optional/transcription/ and Cache Storage
- * recorder-transcription-v1 — never in the app-shell precache.
+ *
+ * Large binaries are NOT shipped in the Pages deploy (Cloudflare 25 MiB limit).
+ * At opt-in they download from free CORS-enabled CDNs:
+ *   - vosk.js → jsDelivr (npm vosk-browser)
+ *   - models → ccoreilly.github.io/vosk-browser/models (GitHub Pages mirror)
+ * Alphacephei.com is the upstream source but does not send CORS headers, so
+ * browsers cannot fetch it directly without a paid/proxy worker.
+ *
+ * Stored in Cache Storage recorder-transcription-v2 — never in the shell precache.
+ * Local optional/transcription/* mirrors (fetch script) are preferred when present.
  */
 (() => {
   "use strict";
 
   const STORAGE_ENABLED = "recorder.offlineTranscribe.v1";
   const STORAGE_INSTALLED = "recorder.offlineTranscribe.installed.v1";
-  const CACHE_NAME = "recorder-transcription-v1";
+  const CACHE_NAME = "recorder-transcription-v2";
   const SAMPLE_RATE = 16000;
-  const RUNTIME_PATH = "./optional/transcription/vosk.js";
-  const MANIFEST_PATH = "./optional/transcription/manifest.json";
+  const RUNTIME_CACHE_KEY = "./optional/transcription/vosk.js";
+  const RUNTIME_SOURCE_URL =
+    "https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js";
+  const MODEL_CDN_BASE = "https://ccoreilly.github.io/vosk-browser/models";
   const RUNTIME_FALLBACK_BYTES = 5804767;
 
   /**
-   * Maps app transcription languages (SpeechRecognition BCP-47) to Vosk small models.
-   * modelBytes are approximate hosted tar.gz sizes (refined from manifest when online).
+   * Maps app transcription languages to Vosk small models hosted on the
+   * vosk-browser demo CDN (CORS *). en-GB shares the en-US model; es/fr use
+   * the versions published on that mirror (alphacephei’s newer zips lack CORS).
    */
   const LANG_MODELS = {
     "en-US": {
       modelId: "vosk-model-small-en-us-0.15",
       label: "English (US)",
-      modelBytes: 41206532,
+      modelBytes: 41184862,
     },
     "en-GB": {
-      modelId: "vosk-model-small-en-gb-0.15",
+      modelId: "vosk-model-small-en-us-0.15",
       label: "English (UK)",
-      modelBytes: 40800000,
+      modelBytes: 41184862,
     },
     "es-ES": {
-      modelId: "vosk-model-small-es-0.42",
+      modelId: "vosk-model-small-es-0.3",
       label: "Spanish",
-      modelBytes: 38000000,
+      modelBytes: 34455485,
     },
     "fr-FR": {
-      modelId: "vosk-model-small-fr-0.22",
+      modelId: "vosk-model-small-fr-pguyot-0.3",
       label: "French",
-      modelBytes: 40300000,
+      modelBytes: 46004187,
     },
     "de-DE": {
       modelId: "vosk-model-small-de-0.15",
       label: "German",
-      modelBytes: 44500000,
+      modelBytes: 46476437,
     },
   };
 
@@ -57,12 +68,15 @@
   let runtimeBlobUrl = null;
   let loadedModelId = null;
   /** @type {Record<string, number>} modelId → bytes */
-  let manifestModelBytes = {};
-  let manifestRuntimeBytes = RUNTIME_FALLBACK_BYTES;
-  let manifestLoaded = false;
+  let knownModelBytes = {};
+  let knownRuntimeBytes = RUNTIME_FALLBACK_BYTES;
 
-  function modelPath(modelId) {
+  function modelCacheKey(modelId) {
     return `./optional/transcription/${modelId}.tar.gz`;
+  }
+
+  function modelCdnUrl(modelId) {
+    return `${MODEL_CDN_BASE}/${modelId}.tar.gz`;
   }
 
   function langEntry(lang) {
@@ -100,9 +114,29 @@
     return { ok: reasons.length === 0, reasons };
   }
 
-  function assetUrlsForLang(lang) {
+  function assetKeysForLang(lang) {
     const e = langEntry(lang);
-    return [RUNTIME_PATH, modelPath(e.modelId)];
+    return [RUNTIME_CACHE_KEY, modelCacheKey(e.modelId)];
+  }
+
+  async function headOk(url) {
+    try {
+      const res = await fetch(url, { method: "HEAD", cache: "no-cache" });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function resolveRuntimeSource() {
+    if (await headOk(RUNTIME_CACHE_KEY)) return RUNTIME_CACHE_KEY;
+    return RUNTIME_SOURCE_URL;
+  }
+
+  async function resolveModelSource(modelId) {
+    const local = modelCacheKey(modelId);
+    if (await headOk(local)) return local;
+    return modelCdnUrl(modelId);
   }
 
   async function cacheOpen() {
@@ -126,11 +160,11 @@
 
   function modelBytesFor(lang) {
     const e = langEntry(lang);
-    return manifestModelBytes[e.modelId] || e.modelBytes;
+    return knownModelBytes[e.modelId] || e.modelBytes;
   }
 
   function runtimeBytes() {
-    return manifestRuntimeBytes || RUNTIME_FALLBACK_BYTES;
+    return knownRuntimeBytes || RUNTIME_FALLBACK_BYTES;
   }
 
   function approximateDownloadBytes(lang) {
@@ -139,28 +173,21 @@
 
   async function refreshKnownBytes() {
     try {
-      const res = await fetch(MANIFEST_PATH, { cache: "no-cache" });
-      if (!res.ok) return;
-      const man = await res.json();
-      if (man?.runtimeBytes) manifestRuntimeBytes = man.runtimeBytes;
-      if (man?.models && typeof man.models === "object") {
-        for (const [id, info] of Object.entries(man.models)) {
-          if (info?.bytes) manifestModelBytes[id] = info.bytes;
-        }
-      }
-      // Legacy v1 manifest: single model file list
-      if (!man?.models && Array.isArray(man?.files)) {
-        for (const f of man.files) {
-          if (f.path?.endsWith("vosk.js") && f.bytes) manifestRuntimeBytes = f.bytes;
-          else if (f.path?.includes("vosk-model-") && f.bytes) {
-            const id = f.path.split("/").pop().replace(/\.tar\.gz$/, "");
-            manifestModelBytes[id] = f.bytes;
-          }
-        }
-      }
-      manifestLoaded = true;
+      const rt = await fetch(RUNTIME_SOURCE_URL, { method: "HEAD", cache: "no-cache" });
+      const rtl = Number(rt.headers.get("content-length"));
+      if (rt.ok && rtl > 0) knownRuntimeBytes = rtl;
     } catch {
-      /* keep fallbacks */
+      /* keep fallback */
+    }
+    for (const e of Object.values(LANG_MODELS)) {
+      if (knownModelBytes[e.modelId]) continue;
+      try {
+        const res = await fetch(modelCdnUrl(e.modelId), { method: "HEAD", cache: "no-cache" });
+        const len = Number(res.headers.get("content-length"));
+        if (res.ok && len > 0) knownModelBytes[e.modelId] = len;
+      } catch {
+        /* keep fallback */
+      }
     }
   }
 
@@ -168,7 +195,7 @@
     const cache = await cacheOpen();
     let total = 0;
     const parts = {};
-    for (const u of assetUrlsForLang(lang)) {
+    for (const u of assetKeysForLang(lang)) {
       const res = await cache.match(u);
       if (!res) continue;
       const buf = await res.clone().arrayBuffer();
@@ -188,7 +215,7 @@
     const target = langEntry(lang);
     try {
       const cache = await cacheOpen();
-      for (const u of assetUrlsForLang(lang)) {
+      for (const u of assetKeysForLang(lang)) {
         const hit = await cache.match(u);
         if (!hit || !hit.ok) {
           installedCache = false;
@@ -224,7 +251,7 @@
   }
 
   async function fetchWithProgress(url, onProgress, signal) {
-    const res = await fetch(url, { signal, cache: "no-cache" });
+    const res = await fetch(url, { signal, cache: "no-cache", mode: "cors" });
     if (!res.ok) throw new Error(`Download failed (${res.status}) for ${url}`);
     const totalHeader = Number(res.headers.get("content-length")) || 0;
     if (!res.body || !res.body.getReader) {
@@ -273,10 +300,12 @@
       await refreshKnownBytes();
       await deleteOfflineModelFilesOnly();
 
+      const runtimeUrl = await resolveRuntimeSource();
+      const modelUrl = await resolveModelSource(target.modelId);
       const cache = await cacheOpen();
       const files = [
-        { url: RUNTIME_PATH, weight: runtimeBytes() },
-        { url: modelPath(target.modelId), weight: modelBytesFor(lang) },
+        { cacheKey: RUNTIME_CACHE_KEY, url: runtimeUrl, weight: runtimeBytes() },
+        { cacheKey: modelCacheKey(target.modelId), url: modelUrl, weight: modelBytesFor(lang) },
       ];
       const weightSum = files.reduce((s, f) => s + f.weight, 0) || 1;
       let completedWeight = 0;
@@ -303,13 +332,14 @@
         if (file.weight > 1024 * 1024 && buf.byteLength < file.weight * 0.85) {
           throw new Error(`Incomplete download for ${file.url}`);
         }
+        // Always store under a same-origin cache key (cross-origin URLs cannot be keys).
         await cache.put(
-          file.url,
+          file.cacheKey,
           new Response(buf, {
             status: 200,
             headers: {
               "Content-Type":
-                file.url.endsWith(".js") ? "application/javascript" : "application/gzip",
+                file.cacheKey.endsWith(".js") ? "application/javascript" : "application/gzip",
               "Content-Length": String(buf.byteLength),
             },
           })
@@ -317,7 +347,7 @@
         completedWeight += file.weight;
       }
 
-      for (const u of assetUrlsForLang(lang)) {
+      for (const u of assetKeysForLang(lang)) {
         const hit = await cache.match(u);
         if (!hit) throw new Error(`Cache missing ${u} after download`);
       }
@@ -377,8 +407,8 @@
     if (!support.ok) return false;
     try {
       const cache = await cacheOpen();
-      const runtimeHit = await cache.match(RUNTIME_PATH);
-      const modelHit = await cache.match(modelPath(meta.model));
+      const runtimeHit = await cache.match(RUNTIME_CACHE_KEY);
+      const modelHit = await cache.match(modelCacheKey(meta.model));
       if (!runtimeHit || !modelHit) return false;
       return meta.model !== langEntry(lang).modelId;
     } catch {
@@ -391,7 +421,10 @@
     if (!meta?.model) return null;
     try {
       const cache = await cacheOpen();
-      if (!(await cache.match(RUNTIME_PATH)) || !(await cache.match(modelPath(meta.model)))) {
+      if (
+        !(await cache.match(RUNTIME_CACHE_KEY)) ||
+        !(await cache.match(modelCacheKey(meta.model)))
+      ) {
         return null;
       }
     } catch {
@@ -426,7 +459,7 @@
     if (voskLoading) return voskLoading;
     voskLoading = (async () => {
       const cache = await cacheOpen();
-      const res = await cache.match(RUNTIME_PATH);
+      const res = await cache.match(RUNTIME_CACHE_KEY);
       if (!res) throw new Error("Offline runtime not installed");
       const blob = await res.blob();
       if (runtimeBlobUrl) URL.revokeObjectURL(runtimeBlobUrl);
@@ -450,7 +483,7 @@
 
     const Vosk = await ensureVoskLoaded();
     const cache = await cacheOpen();
-    const res = await cache.match(modelPath(target.modelId));
+    const res = await cache.match(modelCacheKey(target.modelId));
     if (!res) throw new Error("Offline model not installed for this language");
     const blob = await res.blob();
     if (modelBlobUrl) URL.revokeObjectURL(modelBlobUrl);
@@ -508,7 +541,6 @@
       }
       const mono = mixToMono(audioBuf);
       if (audioBuf.sampleRate === SAMPLE_RATE) return mono;
-      // High-quality resample via OfflineAudioContext when available.
       try {
         const frames = Math.max(1, Math.ceil(mono.length * (SAMPLE_RATE / audioBuf.sampleRate)));
         const offline = new OfflineAudioContext(1, frames, SAMPLE_RATE);
@@ -648,8 +680,6 @@
         });
       });
 
-      // ~0.5s chunks with a short pause so the Vosk worker can process each
-      // message before retrieveFinalResult — flooding setTimeout(0) yielded empty transcripts.
       const chunk = Math.floor(SAMPLE_RATE / 2);
       for (let i = 0; i < pcm.length; i += chunk) {
         if (cancelled) throw new DOMException("Aborted", "AbortError");
@@ -680,7 +710,6 @@
           finish();
         }
       });
-      // Let any trailing result listener updates land.
       await yieldToUi(50);
 
       try {

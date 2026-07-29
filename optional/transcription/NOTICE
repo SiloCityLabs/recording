@@ -1,24 +1,24 @@
 Optional offline transcription assets for SiloCityLabs/recording
 
-This directory vendors (or hosts after fetch) the following third-party works,
-each under the Apache License, Version 2.0 (see LICENSE-Apache-2.0.txt):
+Third-party works under the Apache License, Version 2.0 (see LICENSE-Apache-2.0.txt).
+Binaries are downloaded at user opt-in from free CORS-enabled CDNs (not shipped
+in the Pages deploy):
 
 1. vosk-browser
    Copyright (c) Ciaran O'Reilly and contributors
    https://github.com/ccoreilly/vosk-browser
    Version: 0.0.8
-   File: vosk.js
+   Browser source: https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js
 
-2. Per-language Vosk small models (Alphacephei)
-   https://alphacephei.com/vosk/models
-   Files (gzipped tar, Apache-2.0):
-   - vosk-model-small-en-us-0.15.tar.gz  (English US)
-   - vosk-model-small-en-gb-0.15.tar.gz  (English UK)
-   - vosk-model-small-es-0.42.tar.gz     (Spanish)
-   - vosk-model-small-fr-0.22.tar.gz     (French)
-   - vosk-model-small-de-0.15.tar.gz     (German)
+2. Per-language Vosk small models (Alphacephei / vosk-browser demo mirror)
+   Upstream: https://alphacephei.com/vosk/models
+   Browser mirror (CORS *): https://ccoreilly.github.io/vosk-browser/models/
+   - vosk-model-small-en-us-0.15.tar.gz       (English; also used for en-GB)
+   - vosk-model-small-es-0.3.tar.gz           (Spanish)
+   - vosk-model-small-fr-pguyot-0.3.tar.gz    (French)
+   - vosk-model-small-de-0.15.tar.gz          (German)
 
-Only one language model is downloaded to the device at a time (plus vosk.js).
+Only one language model is stored on the device at a time (plus vosk.js).
 Switching transcription language in Settings replaces the stored model.
 
 Vosk builds on Kaldi speech recognition software. See upstream projects for the
