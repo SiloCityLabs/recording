@@ -17,8 +17,9 @@ A **standalone static PWA** that approximates the Google Recorder experience —
 ## Goals
 
 - Feel like stock Google Recorder (layout & behavior), not a novelty widget.
-- Stay tiny (target: well under 500 KB shipped).
+- Stay tiny (target: well under 500 KB shipped **base shell**).
 - Work offline after install (service worker) for local recordings.
+- Optional on-device transcription (opt-in download; never in shell precache).
 - Optional Nextcloud sync later (currently disabled UI — CORS); same-origin proxy planned.
 - Deploy from `main` with zero build tooling.
 
@@ -62,9 +63,12 @@ click that follows a drag must not open the recording.
 | `styles.css` | Themes, portrait / landscape / wide layouts |
 | `db.js` | IndexedDB recordings store (`RecDB`) |
 | `nextcloud.js` | Optional WebDAV upload / folder create / delete |
+| `offline-transcription.js` | Opt-in Vosk model management, PCM conversion, public transcription API |
 | `app.js` | UI, MediaRecorder, waveform, speech, playback, edit, PIN/blackout, wake lock |
-| `sw.js` | Offline cache — cache name stamped with `__BUILD_HASH__` at deploy |
-| `.github/workflows/deploy.yml` | Copies static files → Pages artifact; replaces `__BUILD_HASH__` with short git SHA |
+| `sw.js` | Offline cache — shell name stamped with `__BUILD_HASH__`; preserves transcription caches |
+| `optional/transcription/` | Hosted runtime + model for opt-in download (not shell-preached) |
+| `scripts/fetch-transcription-assets.sh` | Downloads / repacks vosk-browser + English model |
+| `.github/workflows/deploy.yml` | Copies static files → Pages artifact; stamps `__BUILD_HASH__`; publishes optional assets |
 | `manifest.webmanifest` | PWA manifest (`display: fullscreen` + `display_override`, `orientation: any`) |
 | `CNAME` | `recording.silocitylabs.com` |
 | `icons/` | Circular `any` icons + full-bleed `maskable` icons |
@@ -102,23 +106,96 @@ Each recording in IndexedDB:
   per attempt plus a watchdog, never gated on `state.recording`
 - The SW update reload never fires on first install or mid-recording — it waits for
   the recording to be saved (see `applyPendingShellReload`)
+- Optional offline transcription never auto-downloads; preference
+  `recorder.offlineTranscribe.v1` defaults **off** and is separate from
+  `recorder.transcribe.v1` (live auto-transcribe, default on)
+
+## Optional offline transcription
+
+### Priority
+
+Exactly one transcription mode at a time (Settings toggles are mutually exclusive):
+
+1. **Browser transcription** — live `SpeechRecognition` while recording (probed on enable; left off if the check fails)
+2. **Offline transcription** — Vosk after save / “Transcribe again” when the model is installed
+3. Neither — no transcript
+
+Do not fall back from browser → offline within a single recording session.
+
+### Caches
+
+| Cache | Purpose |
+|---|---|
+| `recorder-__BUILD_HASH__` | App shell precache (`ASSETS` in `sw.js`) |
+| `recorder-transcription-v1` | Optional runtime + model only |
+
+Rules:
+
+- **Never** put `optional/transcription/**` in `ASSETS`.
+- On `activate`, delete obsolete shell caches but **keep** any cache whose name starts with `recorder-transcription-`.
+- Do not let the generic shell `.js` handler absorb optional transcription URLs into the shell cache (`isOptionalTranscriptionPath`).
+- Installation is complete only after all required files are validated in the transcription cache.
+- Prefer Cache Storage (+ blob URLs for `Vosk.createModel`) over OPFS unless a future runtime requires file handles.
+
+### Assets & licenses
+
+| Asset | Version | License | Source |
+|---|---|---|---|
+| `vosk.js` | vosk-browser 0.0.8 | Apache-2.0 | https://www.npmjs.com/package/vosk-browser |
+| Per-lang small models | en-us / en-gb / es / fr / de | Apache-2.0 | https://alphacephei.com/vosk/models |
+
+One language model is cached on-device at a time. Settings language picker confirms before replacing a stored model.
+
+Attribution files: `optional/transcription/NOTICE`, `LICENSE-Apache-2.0.txt`, `README.md`.
+
+Large binaries are **gitignored**. Generate with:
+
+```bash
+./scripts/fetch-transcription-assets.sh
+```
+
+Deploy workflow runs the fetch script when binaries are missing, then copies `optional/transcription/` into the Pages artifact.
+
+### Model update procedure
+
+1. Bump model id / URLs in `scripts/fetch-transcription-assets.sh` and `offline-transcription.js`.
+2. Bump optional cache name to `recorder-transcription-v2` (and keep deleting only non-matching old optional caches intentionally, or document a one-time migration).
+3. Re-run the fetch script; update README size rows and `optional/transcription/README.md`.
+4. Keep Apache-2.0 NOTICE / LICENSE files accurate.
+
+### Transcription behavior notes
+
+- Live streaming with Vosk is **not** required; post-recording PCM pipeline is preferred.
+- Convert WebM/Opus (or other) via `AudioContext.decodeAudioData` → mono → 16 kHz → `acceptWaveformFloat`.
+- Heavy recognition runs inside vosk-browser’s embedded Worker; do not evaluate `vosk.js` at app startup.
+- Segments without reliable timings: single `{ t: 0, text, speaker: 1 }` (or coarse word-timed chunks only when words are present — documented in code).
+- Never block saving the audio blob on transcription success/failure.
+- “Transcribe again” is shown only when the offline model is installed and
+  enabled; it always runs silent on-device Vosk (no play-aloud mic retranscription).
+
+### Browser limits
+
+- Requires WebAssembly, Workers, Web Audio, Cache Storage.
+- Firefox (no Web Speech API) is a primary offline-transcription target.
+- Safari / iOS may be memory-constrained (~300 MB runtime for the small model).
+- Formats the browser cannot `decodeAudioData` cannot be transcribed offline; keep the recording.
 
 ## Deploy checklist (every meaningful ship)
 
-1. **Update README size numbers** (see below) — required every deploy that changes shipped bytes.
+1. **Update README size numbers** (base shell **and** optional rows if those changed).
 2. Push to `main`; Actions stamps `__BUILD_HASH__` and deploys automatically (SW cache name follows the commit).
 
 ### README size (required update)
 
 The README compares this PWA to Play Store Google Recorder (~121 MB app size; ~4.27 MB data / ~11.83 MB cache empty). Those KB figures go stale quickly — **recompute and update the Size section on every deploy**.
 
-Measure the same set the workflow ships (`index.html`, `styles.css`, `db.js`, `nextcloud.js`, `app.js`, `sw.js`, `manifest.webmanifest`, `.nojekyll`, `CNAME`, `icons/**`, `images/icon.png` if present):
+**Base shell only** (same set the workflow ships as the installable app, **excluding** `optional/transcription` binaries):
 
 ```bash
 python3 - <<'PY'
 import os, io, gzip
 files = []
-for p in ['index.html','styles.css','db.js','nextcloud.js','app.js','sw.js','manifest.webmanifest','.nojekyll','CNAME']:
+for p in ['index.html','styles.css','db.js','nextcloud.js','offline-transcription.js','app.js','sw.js','manifest.webmanifest','.nojekyll','CNAME']:
     if os.path.exists(p): files.append(p)
 for dp, _, fs in os.walk('icons'):
     for f in fs: files.append(os.path.join(dp, f))
@@ -139,7 +216,46 @@ print(f'vs 121 MB → ~{121*1024*1024/total:.0f}× smaller')
 PY
 ```
 
+**Optional transcription assets** (do **not** fold into the headline base size):
+
+```bash
+python3 - <<'PY'
+import os
+paths = [
+  'optional/transcription/vosk.js',
+  'optional/transcription/vosk-model-small-en-us-0.15.tar.gz',
+]
+for p in paths:
+    if os.path.exists(p):
+        n = os.path.getsize(p)
+        print(f'{p}: {n/1024/1024:.2f} MiB ({n} bytes)')
+    else:
+        print(f'{p}: MISSING — run ./scripts/fetch-transcription-assets.sh')
+PY
+```
+
 Update both the intro paragraph and the Size table in `README.md`.
+
+## Manual test matrix
+
+| Case | Expect |
+|---|---|
+| Chromium + SpeechRecognition | Live transcript as before; offline unused if live text exists |
+| Firefox (no SpeechRecognition) | Context note; with offline enabled → post-save on-device transcript |
+| Offline **after** model installed | Record / retranscribe works without network |
+| Offline **before** model installed | No auto-download; Settings still explains opt-in |
+| Interrupt model download | Incomplete assets discarded; retry works |
+| Delete offline model | Cache cleared; preference off; shell untouched |
+| App-shell update with model installed | `recorder-transcription-v1` survives; shell cache rotates |
+| SW update while recording | Reload deferred until save (`applyPendingShellReload`) |
+| Pause / resume recording | Existing speech watchdog / pause behavior unchanged |
+| WebM/Opus local transcription | Decodes → mono 16 kHz → transcript saved |
+| Retranscribe | Uses Vosk when installed+enabled; updates transcript/segments/summary only |
+| Transcription failure | Toast; audio blob retained |
+| Quota / low storage | Failed download; no “installed” claim |
+| Reopen installed PWA after download | Model still detected; enable/disable without re-download |
+| Light / dark themes | Settings offline row matches existing `.settings-*` |
+| Phone portrait / landscape | Settings + recording/detail layouts unchanged |
 
 ## Local preview
 
@@ -154,4 +270,6 @@ Open http://localhost:8080 — prefer http(s), not `file://`, so mic / SW / wake
 - Native apps, Capacitor, React/Vue/Svelte, CSS frameworks
 - Google Account / Drive sync
 - Tracking, ads, mandatory accounts, backend APIs
+- Cloud transcription (Google / OpenAI / etc.)
 - Shipping design-reference screenshots in the Pages artifact
+- Counting optional model bytes in the base PWA size headline

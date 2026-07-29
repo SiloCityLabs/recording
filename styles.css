@@ -744,6 +744,48 @@ button {
   padding: 0 12px;
   font-size: 0.9rem;
 }
+.pill-btn.danger-text {
+  color: var(--danger-container, #e57373);
+  border-color: color-mix(in srgb, var(--danger-container, #e57373) 50%, transparent);
+}
+.lang-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 4px;
+  max-height: min(50dvh, 360px);
+  overflow: auto;
+}
+.lang-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm, 12px);
+  border: 1px solid var(--border);
+  background: var(--bg-card, transparent);
+  color: var(--text);
+}
+.lang-option:hover {
+  border-color: var(--accent-strong);
+}
+.lang-option.is-selected {
+  border-color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 14%, transparent);
+}
+.lang-option-label {
+  font-size: 1rem;
+  font-weight: 500;
+}
+.lang-option-meta {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: right;
+  flex-shrink: 0;
+}
 .edit-wave-wrap {
   position: relative;
   flex: 1;
@@ -836,6 +878,40 @@ button {
   color: var(--text-muted);
   font-size: 0.85rem;
   margin-top: 3px;
+}
+.settings-row-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.settings-offline-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+.settings-offline-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.settings-offline-progress {
+  width: 100%;
+}
+.settings-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-search);
+  overflow: hidden;
+}
+.settings-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: var(--accent-strong);
+  transition: width 0.15s ease-out;
 }
 .switch {
   position: relative;
@@ -1226,6 +1302,10 @@ button {
   align-items: center;
   justify-content: center;
   gap: 14px;
+}
+.toast.is-sticky {
+  border-radius: 16px;
+  padding: 14px 20px;
 }
 .toast-action {
   flex-shrink: 0;

@@ -335,13 +335,36 @@
         </button>
         <div class="settings-row static">
           <div>
-            <div class="settings-label">Live transcript while recording</div>
-            <div class="settings-sub">Uses the browser Speech Recognition API when available</div>
+            <div class="settings-label">Browser transcription</div>
+            <div class="settings-sub">Live transcript while recording via the browser Speech Recognition API</div>
           </div>
           <label class="switch">
             <input type="checkbox" id="autoTranscribeToggle" checked />
             <span class="slider"></span>
           </label>
+        </div>
+        <div class="settings-row static settings-row-stack" id="offlineTranscribeRow">
+          <div class="settings-offline-main">
+            <div>
+              <div class="settings-label">Offline transcription</div>
+              <div class="settings-sub" id="offlineTranscribeSub">
+                Transcribe privately on this device after recording. Requires a one-time download.
+              </div>
+            </div>
+            <div class="settings-offline-actions">
+              <label class="switch" id="offlineTranscribeSwitchWrap" hidden>
+                <input type="checkbox" id="offlineTranscribeToggle" />
+                <span class="slider"></span>
+              </label>
+              <button type="button" class="pill-btn small outline" id="offlineTranscribeBtn">Download and enable</button>
+            </div>
+          </div>
+          <div class="settings-offline-progress" id="offlineTranscribeProgress" hidden>
+            <div class="settings-progress-track" aria-hidden="true">
+              <div class="settings-progress-fill" id="offlineTranscribeProgressFill"></div>
+            </div>
+            <div class="settings-sub" id="offlineTranscribeProgressLabel">Downloading…</div>
+          </div>
         </div>
 
         <h2 class="settings-section">About</h2>
@@ -418,7 +441,7 @@
       <button type="button" role="menuitem" data-action="share">Share</button>
       <button type="button" role="menuitem" data-action="edit">Crop &amp; remove</button>
       <button type="button" role="menuitem" data-action="search-transcript">Search transcript</button>
-      <button type="button" role="menuitem" data-action="retranscribe">Transcribe again</button>
+      <button type="button" role="menuitem" data-action="retranscribe" id="retranscribeMenuBtn" hidden>Transcribe again</button>
       <button type="button" role="menuitem" data-action="sync" class="is-disabled" aria-disabled="true">Upload to Nextcloud (coming later)</button>
       <div class="menu-speed">
         <span>Playback speed</span>
@@ -432,6 +455,18 @@
           <a class="menu-link" href="https://github.com/SiloCityLabs/recording" target="_blank" rel="noopener noreferrer">GitHub</a>
         </div>
         <div class="menu-footer-row menu-build">Build __BUILD_HASH__</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Language picker -->
+  <div class="modal-backdrop" id="langModal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="langModalTitle">
+      <h2 id="langModalTitle">Transcription language</h2>
+      <p class="modal-sub" id="langModalSub">Used for live browser transcription and the optional offline model.</p>
+      <div class="lang-options" id="langOptions" role="listbox" aria-labelledby="langModalTitle"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="langCancelBtn">Cancel</button>
       </div>
     </div>
   </div>
@@ -496,6 +531,7 @@
 
   <script src="db.js?v=__BUILD_HASH__" defer></script>
   <script src="nextcloud.js?v=__BUILD_HASH__" defer></script>
+  <script src="offline-transcription.js?v=__BUILD_HASH__" defer></script>
   <script src="app.js?v=__BUILD_HASH__" defer></script>
 </body>
 </html>

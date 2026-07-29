@@ -2,3 +2,9 @@
 Thumbs.db
 *.log
 _site/
+
+# Optional offline transcription binaries (fetched by scripts/fetch-transcription-assets.sh)
+optional/transcription/vosk.js
+optional/transcription/*.tar.gz
+optional/transcription/*.zip
+optional/transcription/manifest.json

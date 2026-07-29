@@ -81,6 +81,7 @@
     forwardBtn: document.getElementById("forwardBtn"),
     detailMenu: document.getElementById("detailMenu"),
     menuRecTitle: document.getElementById("menuRecTitle"),
+    retranscribeMenuBtn: document.getElementById("retranscribeMenuBtn"),
     menuMetaTime: document.getElementById("menuMetaTime"),
     menuMetaSync: document.getElementById("menuMetaSync"),
     renameBtn: document.getElementById("renameBtn"),
@@ -106,6 +107,17 @@
     pinStatus: document.getElementById("pinStatus"),
     langSettingLabel: document.getElementById("langSettingLabel"),
     autoTranscribeToggle: document.getElementById("autoTranscribeToggle"),
+    offlineTranscribeSub: document.getElementById("offlineTranscribeSub"),
+    offlineTranscribeBtn: document.getElementById("offlineTranscribeBtn"),
+    offlineTranscribeToggle: document.getElementById("offlineTranscribeToggle"),
+    offlineTranscribeSwitchWrap: document.getElementById("offlineTranscribeSwitchWrap"),
+    offlineTranscribeProgress: document.getElementById("offlineTranscribeProgress"),
+    offlineTranscribeProgressFill: document.getElementById("offlineTranscribeProgressFill"),
+    offlineTranscribeProgressLabel: document.getElementById("offlineTranscribeProgressLabel"),
+    langModal: document.getElementById("langModal"),
+    langModalSub: document.getElementById("langModalSub"),
+    langOptions: document.getElementById("langOptions"),
+    langCancelBtn: document.getElementById("langCancelBtn"),
     ncModal: document.getElementById("ncModal"),
     ncUrl: document.getElementById("ncUrl"),
     ncUser: document.getElementById("ncUser"),
@@ -165,6 +177,9 @@
     transcriptInterim: "",
     transcriptSegments: [],
     transcriptNote: "",
+    speechNetworkFailed: false,
+    offlineTranscribingId: null,
+    retranscribeAbort: null,
     raf: 0,
     // playback
     objectUrl: null,
@@ -195,26 +210,40 @@
 
   function hideToast() {
     el.toast.hidden = true;
+    el.toast.classList.remove("is-sticky");
     el.toastAction.hidden = true;
     el.toastAction.onclick = null;
   }
 
-  function toast(msg, action) {
+  /**
+   * @param {string} msg
+   * @param {{ label: string, onClick: function } | { sticky?: boolean, duration?: number }} [opts]
+   *   Undo actions use `{ label, onClick }`. Sticky progress uses `{ sticky: true }`.
+   */
+  function toast(msg, opts) {
     el.toastMsg.textContent = msg;
-    if (action) {
-      el.toastAction.textContent = action.label;
+    const isUndo = !!(opts && typeof opts.onClick === "function" && opts.label);
+    const sticky = !!(opts && opts.sticky && !isUndo);
+    if (isUndo) {
+      el.toastAction.textContent = opts.label;
       el.toastAction.hidden = false;
       el.toastAction.onclick = () => {
         hideToast();
-        action.onClick();
+        opts.onClick();
       };
     } else {
       el.toastAction.hidden = true;
       el.toastAction.onclick = null;
     }
+    el.toast.classList.toggle("is-sticky", sticky);
     el.toast.hidden = false;
     clearTimeout(toast._t);
-    toast._t = setTimeout(hideToast, action ? 6000 : 1800);
+    if (sticky) return;
+    toast._t = setTimeout(hideToast, isUndo ? 6000 : opts?.duration || 2800);
+  }
+
+  function stickyToast(msg) {
+    toast(msg, { sticky: true });
   }
 
   // Every clock string in the UI goes through here, so it must never be able to
@@ -518,11 +547,13 @@
     }
   }
 
-  async function measureCacheBytes() {
-    if (!("caches" in window)) return 0;
-    let total = 0;
+  async function measureCacheBreakdown() {
+    const out = { appBytes: 0, offlineBytes: 0, modelLabel: "" };
+    if (!("caches" in window)) return out;
     const names = await caches.keys();
     for (const name of names) {
+      const isTranscription = name.startsWith("recorder-transcription-");
+      let bucket = 0;
       const cache = await caches.open(name);
       const reqs = await cache.keys();
       for (const req of reqs) {
@@ -530,13 +561,24 @@
         if (!res) continue;
         try {
           const buf = await res.clone().arrayBuffer();
-          total += buf.byteLength;
+          bucket += buf.byteLength;
         } catch {
           /* ignore */
         }
       }
+      if (isTranscription) out.modelBytes += bucket;
+      else out.appBytes += bucket;
     }
-    return total;
+    const api = offlineApi();
+    if (api && out.modelBytes > 0) {
+      try {
+        const info = await api.getInstalledInfo();
+        if (info?.label) out.modelLabel = info.label;
+      } catch {
+        /* ignore */
+      }
+    }
+    return out;
   }
 
   async function measureRecordingBytes() {
@@ -551,8 +593,8 @@
     const est = await RecDB.storageEstimate();
     const usage = est.usage || 0;
     const quota = est.quota || 0;
-    const [cacheBytes, recBytes] = await Promise.all([
-      measureCacheBytes(),
+    const [cacheParts, recBytes] = await Promise.all([
+      measureCacheBreakdown(),
       measureRecordingBytes(),
     ]);
     const pct = quota ? Math.min(100, (usage / quota) * 100) : 0;
@@ -566,9 +608,15 @@
       el.storageTotal.hidden = false;
     }
     if (el.storageRows) {
+      const modelName = cacheParts.modelLabel
+        ? `Offline model (${cacheParts.modelLabel})`
+        : "Offline model";
+      const modelValue =
+        cacheParts.modelBytes > 0 ? formatBytes(cacheParts.modelBytes) : "Not downloaded";
       el.storageRows.innerHTML = `
         <div class="storage-row"><span>Recordings</span><span>${state.recordings.length} · ${formatBytes(recBytes)}</span></div>
-        <div class="storage-row"><span>App cache</span><span>${formatBytes(cacheBytes)}</span></div>
+        <div class="storage-row"><span>App cache</span><span>${formatBytes(cacheParts.appBytes)}</span></div>
+        <div class="storage-row"><span>${escapeHtml(modelName)}</span><span>${escapeHtml(modelValue)}</span></div>
         <div class="storage-row"><span>Browser total</span><span>${totalLabel}</span></div>`;
     }
   }
@@ -711,14 +759,136 @@
   /* —— Speech recognition —— */
   const RECOG_RESTART_MS = 350;
   const RECOG_WATCHDOG_MS = 2500;
+  /** Give up restarting live speech after this many consecutive network errors. */
+  const RECOG_NETWORK_GIVE_UP = 2;
   let recogWanted = false;
   let recogInstance = null;
   let recogRestartTimer = 0;
   let recogWatchdog = 0;
   let recogHalted = "";
+  let recogNetworkStrikes = 0;
 
   function speechSupported() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }
+
+  function offlineApi() {
+    return window.OfflineTranscription || null;
+  }
+
+  function offlineReady() {
+    const api = offlineApi();
+    return !!(api && api.isEnabled() && api.isInstalledCached(state.lang));
+  }
+
+  /** Browser live mode XOR offline mode — never both. */
+  function setBrowserTranscribe(on) {
+    state.autoTranscribe = !!on;
+    localStorage.setItem(STORAGE_TRANSCRIBE, state.autoTranscribe ? "on" : "off");
+    if (el.autoTranscribeToggle) el.autoTranscribeToggle.checked = state.autoTranscribe;
+  }
+
+  function setOfflineTranscribe(on) {
+    const api = offlineApi();
+    if (!api) return;
+    api.setEnabled(!!on);
+    if (el.offlineTranscribeToggle) el.offlineTranscribeToggle.checked = !!on;
+  }
+
+  function enforceExclusiveModes() {
+    // If offline is enabled, browser live must be off.
+    if (offlineApi()?.isEnabled() && state.autoTranscribe) {
+      setBrowserTranscribe(false);
+    }
+  }
+
+  /**
+   * Brief SpeechRecognition probe after the user enables browser mode.
+   * Succeeds on a stable start; fails on missing API, permission, or network/service errors.
+   */
+  function probeBrowserSpeech() {
+    if (!speechSupported()) {
+      return Promise.resolve({ ok: false, reason: "unsupported" });
+    }
+    return new Promise((resolve) => {
+      const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const rec = new Ctor();
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      rec.lang = state.lang;
+      let settled = false;
+      let started = false;
+      let confirmTimer = 0;
+      const done = (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        clearTimeout(confirmTimer);
+        try {
+          rec.onstart = null;
+          rec.onerror = null;
+          rec.onend = null;
+          rec.abort();
+        } catch {
+          /* ignore */
+        }
+        resolve(result);
+      };
+      const timeout = setTimeout(() => {
+        done(started ? { ok: true } : { ok: false, reason: "timeout" });
+      }, 4500);
+      rec.onstart = () => {
+        started = true;
+        // Catch immediate network/service failures that fire right after start.
+        confirmTimer = setTimeout(() => done({ ok: true }), 1400);
+      };
+      rec.onerror = (ev) => {
+        const err = ev?.error || "";
+        if (err === "no-speech" || err === "aborted") {
+          if (started) done({ ok: true });
+          return;
+        }
+        done({ ok: false, reason: err || "error" });
+      };
+      try {
+        rec.start();
+      } catch {
+        done({ ok: false, reason: "start-failed" });
+      }
+    });
+  }
+
+  function browserProbeFailMessage(reason) {
+    switch (reason) {
+      case "unsupported":
+        return "This browser has no Speech Recognition API";
+      case "not-allowed":
+      case "service-not-allowed":
+        return "Browser transcription blocked — allow microphone access";
+      case "network":
+        return "Browser speech service unreachable — left off";
+      case "audio-capture":
+        return "Microphone busy — browser transcription left off";
+      case "timeout":
+        return "Browser transcription did not start — left off";
+      default:
+        return "Browser transcription failed the check — left off";
+    }
+  }
+
+  async function refreshOfflineInstalledFlag() {
+    const api = offlineApi();
+    if (!api) return false;
+    try {
+      return await api.isOfflineModelInstalled(state.lang);
+    } catch {
+      return false;
+    }
+  }
+
+  function offlineRecordingNote() {
+    return "Offline mode: this recording will be transcribed privately on-device after you stop.";
   }
 
   function setLangPill(text) {
@@ -727,22 +897,48 @@
     el.langPill.textContent = text;
   }
 
+  function haltRecognition(reason) {
+    recogHalted = reason || "halted";
+    recogWanted = false;
+    if (recogRestartTimer) {
+      window.clearTimeout(recogRestartTimer);
+      recogRestartTimer = 0;
+    }
+    if (recogWatchdog) {
+      window.clearInterval(recogWatchdog);
+      recogWatchdog = 0;
+    }
+  }
+
   function startRecognition() {
     stopRecognition();
     state.transcriptNote = "";
-    if (!state.autoTranscribe) {
-      if (el.langPill) el.langPill.hidden = true;
-      state.transcriptNote = "Auto transcribe is off — turn it on in Settings.";
+    state.speechNetworkFailed = false;
+    recogNetworkStrikes = 0;
+
+    // Exclusive offline mode — no live browser speech.
+    if (offlineReady() && !state.autoTranscribe) {
+      setLangPill("Offline after stop");
+      state.transcriptNote = offlineRecordingNote();
       renderLiveTranscript();
       return;
     }
+
+    if (!state.autoTranscribe) {
+      if (el.langPill) el.langPill.hidden = true;
+      state.transcriptNote = "Transcription is off — enable Browser or Offline in Settings.";
+      renderLiveTranscript();
+      return;
+    }
+
     if (!speechSupported()) {
       setLangPill("Transcript unavailable");
       state.transcriptNote =
-        "This browser has no Web Speech API, so live transcript is unavailable. Chrome, Edge, and Safari support it.";
+        "This browser has no Web Speech API. Switch to Offline transcription in Settings, or use Chrome / Edge.";
       renderLiveTranscript();
       return;
     }
+
     recogWanted = true;
     recogHalted = "";
     spawnRecognition();
@@ -763,12 +959,17 @@
     rec.lang = state.lang;
 
     rec.onstart = () => {
-      state.transcriptNote = "";
-      setLangPill(`${langLabel(state.lang)} ›`);
+      // Keep a stable offline/network note if we already know the service is down.
+      if (!state.speechNetworkFailed) {
+        state.transcriptNote = "";
+        setLangPill(`${langLabel(state.lang)} ›`);
+      }
       renderLiveTranscript();
     };
 
     rec.onresult = (ev) => {
+      recogNetworkStrikes = 0;
+      state.speechNetworkFailed = false;
       let interim = "";
       let finalChunk = "";
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -785,22 +986,29 @@
         });
       }
       state.transcriptInterim = interim;
+      setLangPill(`${langLabel(state.lang)} ›`);
       renderLiveTranscript();
     };
 
     rec.onerror = (ev) => {
       const err = ev?.error || "";
-      // Only a permission failure is worth giving up on; everything else gets
-      // another session from onend.
+      // Permission failures stop immediately. Persistent network failure stops
+      // the restart loop so the lang pill does not flicker.
       if (err === "not-allowed" || err === "service-not-allowed") {
-        recogHalted = err;
-        recogWanted = false;
+        haltRecognition(err);
         setLangPill("Transcript blocked");
         state.transcriptNote = "Speech recognition was denied microphone access.";
       } else if (err === "audio-capture") {
         setLangPill("Transcript mic busy");
       } else if (err === "network") {
+        state.speechNetworkFailed = true;
+        recogNetworkStrikes += 1;
         setLangPill("Transcript offline");
+        state.transcriptNote =
+          "Browser speech service is unreachable. Try again later, or switch to Offline transcription in Settings.";
+        if (recogNetworkStrikes >= RECOG_NETWORK_GIVE_UP) {
+          haltRecognition("network");
+        }
       }
       renderLiveTranscript();
     };
@@ -835,6 +1043,7 @@
 
   function stopRecognition() {
     recogWanted = false;
+    recogNetworkStrikes = 0;
     if (recogRestartTimer) {
       window.clearTimeout(recogRestartTimer);
       recogRestartTimer = 0;
@@ -1073,7 +1282,7 @@
       const pauseLabel = el.pauseBtn?.querySelector("span");
       if (pauseLabel) pauseLabel.textContent = "Pause";
       setView("recording");
-      setRecView(state.autoTranscribe && speechSupported() ? "text" : "wave");
+      setRecView(state.autoTranscribe || offlineReady() ? "text" : "wave");
       await requestWakeLock();
       cancelAnimationFrame(state.raf);
       state.raf = requestAnimationFrame(loopVisual);
@@ -1172,6 +1381,10 @@
         state.mediaRecorder = null;
         state.mediaStream = null;
         resolve(rec);
+        // Kick off local transcription after the audio is safely stored.
+        queueMicrotask(() => {
+          maybeOfflineTranscribe(rec.id).catch((err) => console.error(err));
+        });
       };
       try {
         if (mr.state !== "inactive") mr.stop();
@@ -1225,6 +1438,95 @@
     return sentences.slice(0, 3);
   }
 
+  function shouldOfflineTranscribe() {
+    const api = offlineApi();
+    // Offline mode is exclusive — run after every save while it is enabled.
+    return !!(api && api.isEnabled() && api.isInstalledCached(state.lang));
+  }
+
+  async function maybeOfflineTranscribe(id) {
+    const api = offlineApi();
+    if (!api) return;
+    await refreshOfflineInstalledFlag();
+    const rec = await RecDB.get(id);
+    if (!rec || !shouldOfflineTranscribe()) return;
+    if (state.offlineTranscribingId === id || api.isTranscribing()) return;
+    await runOfflineTranscribe(rec, { reason: "auto" });
+  }
+
+  async function runOfflineTranscribe(rec, { reason } = {}) {
+    const api = offlineApi();
+    if (!api) return;
+    if (state.offlineTranscribingId) {
+      toast("Already transcribing a recording");
+      return;
+    }
+    state.offlineTranscribingId = rec.id;
+    const ac = new AbortController();
+    state.retranscribeAbort = ac;
+
+    const stickyProgress = (msg) => {
+      stickyToast(msg);
+    };
+
+    try {
+      stickyProgress(reason === "manual" ? "Transcribing on-device…" : "Transcribing on-device…");
+      if (state.currentId === rec.id && state.view === "detail") {
+        setDetailView("text");
+      }
+      const result = await api.transcribeAudioBlob(rec.blob, {
+        signal: ac.signal,
+        lang: state.lang,
+        onProgress: (p) => {
+          if (p.phase === "decode") stickyProgress("Decoding audio…");
+          else if (p.phase === "load") stickyProgress("Loading offline model…");
+          else if (p.phase === "recognize") {
+            const partial = (p.partial || "").trim();
+            stickyProgress(partial ? `Transcribing… ${partial}` : "Transcribing on-device…");
+          }
+        },
+      });
+      // Re-read so we do not clobber title/favorite/sync edits made meanwhile.
+      const fresh = await RecDB.get(rec.id);
+      if (!fresh) {
+        hideToast();
+        return;
+      }
+      if (!result.text) {
+        toast("No speech detected in on-device transcription");
+        if (state.currentId === fresh.id) renderDetailTranscript(fresh);
+        return;
+      }
+      fresh.transcript = result.text;
+      fresh.segments = result.segments || [{ t: 0, text: result.text, speaker: 1 }];
+      fresh.summary = buildSummary(fresh.transcript);
+      await RecDB.put(fresh);
+      await refreshList();
+      if (state.currentId === fresh.id) {
+        renderDetailTranscript(fresh);
+        if (fresh.summary?.length) {
+          el.summaryCard.hidden = false;
+          el.summaryList.innerHTML = fresh.summary.map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+        }
+      }
+      toast("On-device transcript saved");
+    } catch (err) {
+      if (err?.name === "AbortError") {
+        toast("Transcription cancelled");
+      } else {
+        console.error(err);
+        toast(err?.message || "On-device transcription failed — recording kept");
+      }
+      if (state.currentId === rec.id) {
+        const fresh = await RecDB.get(rec.id);
+        if (fresh) renderDetailTranscript(fresh);
+      }
+    } finally {
+      if (state.offlineTranscribingId === rec.id) state.offlineTranscribingId = null;
+      if (state.retranscribeAbort === ac) state.retranscribeAbort = null;
+    }
+  }
+
   /* —— Detail / playback —— */
   async function openDetail(id) {
     const rec = await RecDB.get(id);
@@ -1261,14 +1563,23 @@
         ? [{ t: 0, text: rec.transcript, speaker: 1 }]
         : [];
     if (!segs.length) {
-      el.detailTranscript.innerHTML = `<p style="color:var(--text-muted)">No transcript. Use “Transcribe again” if your browser supports speech recognition.</p>`;
+      const api = offlineApi();
+      let hint = "No transcript.";
+      if (state.offlineTranscribingId === rec.id) {
+        hint = "Transcribing on-device…";
+      } else if (api?.isInstalledCached(state.lang) && api.isEnabled()) {
+        hint += " Use “Transcribe again” for on-device transcription.";
+      } else {
+        hint += " Enable Offline transcription in Settings for on-device transcripts.";
+      }
+      el.detailTranscript.innerHTML = `<p style="color:var(--text-muted)">${escapeHtml(hint)}</p>`;
       return;
     }
     el.detailTranscript.innerHTML = segs
       .map(
         (s) => `
       <div class="speaker-block" data-t="${s.t}">
-        <div class="speaker-head"><span class="speaker-dot"></span> Speaker ${s.speaker || 1} · ${formatDuration(s.t)}</div>
+        <div class="speaker-head"><span class="speaker-dot"></span> Speaker ${s.speaker || 1} · ${formatDuration(s.t || 0)}</div>
         <div>${escapeHtml(s.text)}</div>
       </div>`
       )
@@ -1772,103 +2083,20 @@
   async function retranscribe() {
     const rec = await RecDB.get(state.currentId);
     if (!rec) return;
-    if (!speechSupported()) {
-      toast("Speech recognition not supported in this browser");
-      return;
-    }
-    if (!state.objectUrl) {
-      toast("Open the recording first");
+    if (state.offlineTranscribingId) {
+      toast("Transcription already in progress");
       return;
     }
 
-    setDetailView("text");
-    el.detailTranscript.innerHTML = `<p style="color:var(--text-muted)">Playing audio for transcription… use speakers (not headphones) so the mic can hear it.</p>`;
-    toast("Re-transcribe: play aloud so the mic can hear it");
-
-    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new Ctor();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = state.lang;
-
-    let finalText = "";
-    const segments = [];
-    const startedAt = performance.now();
-
-    recognition.onresult = (ev) => {
-      let interim = "";
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        const r = ev.results[i];
-        if (r.isFinal) {
-          const chunk = r[0].transcript.trim();
-          if (!chunk) continue;
-          finalText = `${finalText} ${chunk}`.trim();
-          segments.push({
-            t: Math.max(0, (performance.now() - startedAt)),
-            text: chunk,
-            speaker: 1,
-          });
-        } else {
-          interim += r[0].transcript;
-        }
-      }
-      const live = finalText + (interim ? ` ${interim}` : "");
-      el.detailTranscript.innerHTML = live
-        ? `<div class="speaker-block"><div class="speaker-head"><span class="speaker-dot"></span> Transcript</div><div>${escapeHtml(live.trim())}</div></div>`
-        : `<p style="color:var(--text-muted)">Listening…</p>`;
-    };
-
-    recognition.onerror = (ev) => {
-      if (ev?.error === "not-allowed") toast("Allow microphone to re-transcribe");
-    };
-
-    const finish = async () => {
-      try {
-        recognition.onend = null;
-        recognition.stop();
-      } catch {
-        /* ignore */
-      }
-      el.audio.removeEventListener("ended", finish);
-      if (!finalText.trim()) {
-        toast("No speech detected — try again with volume up");
-        renderDetailTranscript(rec);
-        return;
-      }
-      rec.transcript = finalText.trim();
-      rec.segments = segments;
-      rec.summary = buildSummary(rec.transcript);
-      await RecDB.put(rec);
-      await refreshList();
-      renderDetailTranscript(rec);
-      if (rec.summary?.length) {
-        el.summaryCard.hidden = false;
-        el.summaryList.innerHTML = rec.summary.map((s) => `<li>${escapeHtml(s)}</li>`).join("");
-      }
-      toast("Transcript saved");
-    };
-
-    recognition.onend = () => {
-      /* keep going until audio ends */
-      if (!el.audio.paused && !el.audio.ended) {
-        try {
-          recognition.start();
-        } catch {
-          /* ignore */
-        }
-      }
-    };
-
-    try {
-      recognition.start();
-      el.audio.currentTime = 0;
-      await el.audio.play();
-      el.audio.addEventListener("ended", finish, { once: true });
-    } catch (err) {
-      console.error(err);
-      toast("Could not start re-transcribe");
-      renderDetailTranscript(rec);
+    const api = offlineApi();
+    await refreshOfflineInstalledFlag();
+    if (!(api && api.isEnabled() && api.isInstalledCached(state.lang))) {
+      toast("Install Offline transcription in Settings to re-transcribe");
+      return;
     }
+
+    el.detailMenu.hidden = true;
+    await runOfflineTranscribe(rec, { reason: "manual" });
   }
 
   /* —— Search —— */
@@ -1956,6 +2184,10 @@
     el.menuMetaTime.textContent = formatLongDate(rec.createdAt);
     el.menuMetaSync.textContent = "Nextcloud sync coming later (CORS)";
     el.speedBtn.textContent = `${SPEEDS[state.speedIndex]}×`;
+    await refreshOfflineInstalledFlag();
+    if (el.retranscribeMenuBtn) {
+      el.retranscribeMenuBtn.hidden = !offlineReady();
+    }
     el.detailMenu.hidden = false;
   });
   el.detailMenu.addEventListener("click", (e) => {
@@ -1973,7 +2205,7 @@
         el.searchInput.value = "";
         el.searchInput.focus();
         toast("Search titles & transcripts");
-      }       else if (action === "retranscribe") retranscribe();
+      } else if (action === "retranscribe") retranscribe();
       else if (action === "sync") showNcUnavailable();
     });
   });
@@ -2080,12 +2312,88 @@
       } else if (key === "pin") {
         openPinModal("setup");
       } else if (key === "lang") {
-        const i = LANGS.findIndex((l) => l.id === state.lang);
-        state.lang = LANGS[(i + 1) % LANGS.length].id;
-        localStorage.setItem(STORAGE_LANG, state.lang);
-        el.langSettingLabel.textContent = langLabel(state.lang);
+        openLangModal();
       }
     });
+  });
+
+  async function openLangModal() {
+    if (!el.langModal || !el.langOptions) return;
+    const api = offlineApi();
+    if (api) await api.refreshKnownBytes();
+    const installed = api ? await api.getInstalledInfo() : null;
+    el.langOptions.innerHTML = "";
+    for (const lang of LANGS) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "lang-option" + (lang.id === state.lang ? " is-selected" : "");
+      btn.setAttribute("role", "option");
+      btn.setAttribute("aria-selected", lang.id === state.lang ? "true" : "false");
+      const downloadBytes = api ? api.approximateDownloadBytes(lang.id) : 0;
+      const sizeLabel = api ? api.formatBytes(downloadBytes) : "";
+      btn.innerHTML = `
+        <span class="lang-option-label">${escapeHtml(lang.label)}</span>
+        <span class="lang-option-meta">${escapeHtml(sizeLabel ? `Offline ~${sizeLabel}` : "")}</span>`;
+      btn.addEventListener("click", () => selectTranscriptionLanguage(lang.id));
+      el.langOptions.appendChild(btn);
+    }
+    if (el.langModalSub) {
+      if (installed) {
+        el.langModalSub.textContent = `Live browser transcription and the optional offline model. Offline model installed: ${installed.label} (~${(api && api.formatBytes(installed.bytes)) || "—"}). Switching to another language replaces it.`;
+      } else {
+        el.langModalSub.textContent =
+          "Used for live browser transcription and the optional offline model. Download size depends on the language.";
+      }
+    }
+    el.langModal.hidden = false;
+  }
+
+  function closeLangModal() {
+    if (el.langModal) el.langModal.hidden = true;
+  }
+
+  async function selectTranscriptionLanguage(nextId) {
+    if (!LANGS.some((l) => l.id === nextId)) return;
+    if (nextId === state.lang) {
+      closeLangModal();
+      return;
+    }
+
+    const api = offlineApi();
+    const nextLabel = langLabel(nextId);
+    if (api) {
+      const installed = await api.getInstalledInfo();
+      const nextModel = api.langEntry(nextId).modelId;
+      if (installed && installed.modelId !== nextModel) {
+        const oldSize = api.formatBytes(installed.bytes || api.approximateDownloadBytes(installed.lang));
+        const newSize = api.formatBytes(api.approximateDownloadBytes(nextId));
+        const ok = confirm(
+          `Switching to ${nextLabel} will replace the offline ${installed.label} model (~${oldSize} stored) with a ${nextLabel} model (about ${newSize} download). Continue?`
+        );
+        if (!ok) return;
+        try {
+          await api.deleteOfflineModel();
+          toast("Offline model removed — download the new language in Settings");
+          updateStorageCard();
+        } catch (err) {
+          console.error(err);
+          toast("Could not remove the offline model");
+          return;
+        }
+      }
+    }
+
+    state.lang = nextId;
+    localStorage.setItem(STORAGE_LANG, state.lang);
+    el.langSettingLabel.textContent = langLabel(state.lang);
+    closeLangModal();
+    await refreshOfflineInstalledFlag();
+    await refreshOfflineTranscribeUi();
+  }
+
+  el.langCancelBtn?.addEventListener("click", closeLangModal);
+  el.langModal?.addEventListener("click", (e) => {
+    if (e.target === el.langModal) closeLangModal();
   });
 
   el.wakeLockToggle.addEventListener("change", () => {
@@ -2096,9 +2404,157 @@
     state.blackoutPref = el.blackoutToggle.checked;
     localStorage.setItem(STORAGE_BLACKOUT, state.blackoutPref ? "on" : "off");
   });
-  el.autoTranscribeToggle.addEventListener("change", () => {
-    state.autoTranscribe = el.autoTranscribeToggle.checked;
-    localStorage.setItem(STORAGE_TRANSCRIBE, state.autoTranscribe ? "on" : "off");
+  el.autoTranscribeToggle.addEventListener("change", async () => {
+    const turnOn = el.autoTranscribeToggle.checked;
+    if (!turnOn) {
+      setBrowserTranscribe(false);
+      toast("Browser transcription off");
+      return;
+    }
+
+    // Probe before committing — leave off + toast if the API/service fails.
+    el.autoTranscribeToggle.disabled = true;
+    stickyToast("Checking browser transcription…");
+    const probe = await probeBrowserSpeech();
+    el.autoTranscribeToggle.disabled = false;
+    if (!probe.ok) {
+      setBrowserTranscribe(false);
+      toast(browserProbeFailMessage(probe.reason));
+      return;
+    }
+
+    setOfflineTranscribe(false);
+    setBrowserTranscribe(true);
+    toast("Browser transcription on");
+    refreshOfflineTranscribeUi();
+  });
+
+  let offlineUiBusy = false;
+
+  async function refreshOfflineTranscribeUi() {
+    const api = offlineApi();
+    if (!api || !el.offlineTranscribeSub) return;
+    const status = await api.getStatus(state.lang);
+    const sizeLabel = api.formatBytes(status.downloadBytes);
+    const storedLabel = api.formatBytes(status.storedBytes);
+    const langName = status.langLabel || langLabel(state.lang);
+
+    el.offlineTranscribeProgress.hidden = true;
+    el.offlineTranscribeBtn.disabled = offlineUiBusy;
+
+    if (!status.supported) {
+      el.offlineTranscribeSwitchWrap.hidden = true;
+      el.offlineTranscribeBtn.hidden = true;
+      el.offlineTranscribeSub.textContent = `Unavailable on this device: ${status.unsupportedReasons.join("; ")}.`;
+      return;
+    }
+
+    if (status.installed) {
+      el.offlineTranscribeSwitchWrap.hidden = false;
+      el.offlineTranscribeToggle.checked = status.enabled;
+      el.offlineTranscribeBtn.hidden = false;
+      el.offlineTranscribeBtn.textContent = "Delete offline model";
+      el.offlineTranscribeBtn.classList.add("danger-text");
+      el.offlineTranscribeSub.textContent = status.enabled
+        ? `${status.modelLabel} · ~${storedLabel || sizeLabel} stored. Transcripts run on-device after each recording (browser live transcription is off).`
+        : `${status.modelLabel} is installed (~${storedLabel || sizeLabel}) but off. Enable to use on-device transcription instead of the browser.`;
+      return;
+    }
+
+    if (status.installedInfo && status.conflicts) {
+      el.offlineTranscribeSwitchWrap.hidden = true;
+      el.offlineTranscribeBtn.hidden = false;
+      el.offlineTranscribeBtn.textContent = "Download and enable";
+      el.offlineTranscribeBtn.classList.remove("danger-text");
+      const oldSize = api.formatBytes(status.installedInfo.bytes || 0);
+      el.offlineTranscribeSub.textContent = `Current language is ${langName} (~${sizeLabel}). An offline ${status.installedInfo.label} model (~${oldSize || "—"}) is still stored — change language back or download ${langName} to replace it.`;
+      return;
+    }
+
+    el.offlineTranscribeSwitchWrap.hidden = true;
+    el.offlineTranscribeBtn.hidden = false;
+    el.offlineTranscribeBtn.textContent = "Download and enable";
+    el.offlineTranscribeBtn.classList.remove("danger-text");
+    el.offlineTranscribeSub.textContent = `Transcribe privately on this device after recording (instead of browser live transcription). ${langName} model — one-time download of approximately ${sizeLabel}.`;
+  }
+
+  el.offlineTranscribeToggle?.addEventListener("change", () => {
+    const api = offlineApi();
+    if (!api) return;
+    const turnOn = el.offlineTranscribeToggle.checked;
+    if (turnOn) {
+      setBrowserTranscribe(false);
+      setOfflineTranscribe(true);
+      toast("Offline transcription on — browser live off");
+    } else {
+      setOfflineTranscribe(false);
+      toast("Offline transcription off");
+    }
+    refreshOfflineTranscribeUi();
+  });
+
+  el.offlineTranscribeBtn?.addEventListener("click", async () => {
+    const api = offlineApi();
+    if (!api || offlineUiBusy) return;
+    const status = await api.getStatus(state.lang);
+    if (status.installed) {
+      if (!confirm("Delete the offline transcription model from this device?")) return;
+      offlineUiBusy = true;
+      try {
+        await api.deleteOfflineModel();
+        toast("Offline model deleted");
+        updateStorageCard();
+      } catch (err) {
+        console.error(err);
+        toast("Could not delete offline model");
+      } finally {
+        offlineUiBusy = false;
+        await refreshOfflineTranscribeUi();
+      }
+      return;
+    }
+
+    // Replacing a different-language install: clear first so download starts clean.
+    if (status.installedInfo && status.conflicts) {
+      const ok = confirm(
+        `Download ${status.langLabel} (~${api.formatBytes(status.downloadBytes)}) and replace the stored ${status.installedInfo.label} model?`
+      );
+      if (!ok) return;
+    }
+
+    offlineUiBusy = true;
+    el.offlineTranscribeBtn.disabled = true;
+    el.offlineTranscribeProgress.hidden = false;
+    el.offlineTranscribeProgressFill.style.width = "0%";
+    el.offlineTranscribeProgressLabel.textContent = `Downloading ${status.langLabel}…`;
+    try {
+      await api.downloadOfflineModel((p) => {
+        const pct = Math.round((p.overall || 0) * 100);
+        el.offlineTranscribeProgressFill.style.width = `${pct}%`;
+        if (p.phase === "download") {
+          const rec = api.formatBytes(p.received || 0);
+          const tot = api.formatBytes(p.total || status.downloadBytes);
+          el.offlineTranscribeProgressLabel.textContent = `Downloading ${status.langLabel}… ${pct}% (${rec} / ${tot})`;
+        } else if (p.phase === "done") {
+          el.offlineTranscribeProgressLabel.textContent = "Installed";
+          el.offlineTranscribeProgressFill.style.width = "100%";
+        }
+      }, state.lang);
+      setBrowserTranscribe(false);
+      toast(`${status.langLabel} offline transcription ready — browser live off`);
+      updateStorageCard();
+    } catch (err) {
+      console.error(err);
+      if (err?.name === "AbortError") toast("Download cancelled");
+      else if (/quota|storage|QuotaExceeded/i.test(String(err?.name || err?.message || ""))) {
+        toast("Not enough storage for the offline model");
+      } else {
+        toast(err?.message || "Download failed — try again");
+      }
+    } finally {
+      offlineUiBusy = false;
+      await refreshOfflineTranscribeUi();
+    }
   });
 
   function applySettingsLabels() {
@@ -2109,6 +2565,7 @@
     el.pinStatus.textContent = state.pin ? "On" : "Off";
     el.themeSettingLabel.textContent = state.theme[0].toUpperCase() + state.theme.slice(1);
     updateSyncBadge();
+    refreshOfflineTranscribeUi();
   }
 
   el.ncCancelBtn.addEventListener("click", () => {
@@ -2147,6 +2604,7 @@
     }
     if (e.key !== "Escape") return;
     if (!el.ncModal.hidden) el.ncModal.hidden = true;
+    else if (el.langModal && !el.langModal.hidden) closeLangModal();
     else if (!el.detailMenu.hidden) el.detailMenu.hidden = true;
     else if (!el.profileSheet.hidden) el.profileSheet.hidden = true;
     else if (!el.blackout.hidden && !state.pin) exitBlackout(true);
@@ -2203,8 +2661,13 @@
   buildPinPad();
   bindEditHandles();
   applyTheme();
+  enforceExclusiveModes();
   applySettingsLabels();
   refreshList();
+  refreshOfflineInstalledFlag().then(() => {
+    enforceExclusiveModes();
+    applySettingsLabels();
+  });
 
   if ("serviceWorker" in navigator) {
     // A first install also claims this page, and reloading then throws away a
