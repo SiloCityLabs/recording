@@ -31,7 +31,7 @@ Optional **Nextcloud** backup is planned (same-origin proxy) — disabled for no
 | Google Recorder (Play Store app size) | ~121 MB |
 | Google Recorder app data (no recordings) | ~4.27 MB |
 | Google Recorder cache | ~11.83 MB |
-| This PWA (all shipped files) | **~214 KB** (0.209 MB) |
+| This PWA (all shipped files) | **~217 KB** (0.212 MB) |
 | Typical transfer (gzip text + icons) | **~133 KB** |
 
 > **Maintainers / agents:** refresh these numbers on **every deploy** that changes shipped assets. See `AGENTS.md` for the measurement command.

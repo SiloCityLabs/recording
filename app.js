@@ -579,21 +579,119 @@
   }
 
   /* —— Recording —— */
-  async function startRecording() {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      toast("Microphone not available");
-      return;
+  let startingRecording = false;
+
+  function micErrorMessage(err) {
+    const name = err?.name || "";
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+      return "Microphone blocked — allow mic access for this site and try again";
     }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      return "No microphone found";
+    }
+    if (name === "NotReadableError" || name === "TrackStartError") {
+      return "Microphone is in use by another app";
+    }
+    if (name === "OverconstrainedError" || name === "ConstraintNotSatisfiedError") {
+      return "Microphone settings not supported on this device";
+    }
+    if (name === "SecurityError") {
+      return "Microphone requires HTTPS (or localhost)";
+    }
+    if (name === "AbortError") {
+      return "Microphone request was interrupted — try again";
+    }
+    return err?.message ? `Mic error: ${err.message}` : "Could not start microphone";
+  }
+
+  async function requestMicStream() {
+    // Prefer gentle constraints; some devices reject channelCount / AEC flags.
+    const attempts = [
+      {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           channelCount: 1,
         },
-      });
+      },
+      {
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      },
+      { audio: true },
+    ];
+
+    let lastErr = null;
+    for (const constraints of attempts) {
+      try {
+        return await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err) {
+        lastErr = err;
+        // Permission truly denied — don't keep prompting with looser constraints.
+        if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError" || err?.name === "SecurityError") {
+          throw err;
+        }
+      }
+    }
+    throw lastErr || new Error("getUserMedia failed");
+  }
+
+  async function ensureAudioContextRunning(ctx) {
+    if (!ctx) return;
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        /* ignore — visuals may be quiet until next gesture */
+      }
+    }
+  }
+
+  async function startRecording() {
+    if (state.recording || startingRecording) return;
+    if (!window.isSecureContext) {
+      toast("Microphone requires HTTPS (or localhost)");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast("Microphone not available in this browser");
+      return;
+    }
+
+    startingRecording = true;
+    el.recordFab?.setAttribute("aria-busy", "true");
+    try {
+      // Permissions API is advisory — always still await getUserMedia.
+      try {
+        const status = await navigator.permissions?.query?.({ name: "microphone" });
+        if (status?.state === "denied") {
+          toast("Microphone blocked in site settings — reset permission and try again");
+          return;
+        }
+      } catch {
+        /* Firefox / Safari may not support microphone permission query */
+      }
+
+      const stream = await requestMicStream();
+      // Ensure tracks are live before wiring recorder (some PWAs report muted briefly).
+      await Promise.all(
+        stream.getAudioTracks().map(async (track) => {
+          if (track.readyState === "ended") {
+            throw new DOMException("Microphone track ended", "NotReadableError");
+          }
+          try {
+            await track.applyConstraints?.({});
+          } catch {
+            /* optional */
+          }
+        })
+      );
+
       state.mediaStream = stream;
       state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      await ensureAudioContextRunning(state.audioCtx);
       const source = state.audioCtx.createMediaStreamSource(stream);
       state.analyser = state.audioCtx.createAnalyser();
       state.analyser.fftSize = 2048;
@@ -603,7 +701,9 @@
         ? "audio/webm;codecs=opus"
         : MediaRecorder.isTypeSupported("audio/mp4")
           ? "audio/mp4"
-          : "";
+          : MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
+            ? "audio/ogg;codecs=opus"
+            : "";
       state.mediaRecorder = mime
         ? new MediaRecorder(stream, { mimeType: mime })
         : new MediaRecorder(stream);
@@ -618,6 +718,10 @@
 
       state.mediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size) state.chunks.push(e.data);
+      };
+      state.mediaRecorder.onerror = (e) => {
+        console.error(e);
+        toast("Recording error");
       };
 
       state.mediaRecorder.start(250);
@@ -635,15 +739,28 @@
       if (state.blackoutPref) enterBlackout();
     } catch (err) {
       console.error(err);
-      toast("Microphone permission denied");
+      state.mediaStream?.getTracks().forEach((t) => t.stop());
+      state.mediaStream = null;
+      try {
+        await state.audioCtx?.close();
+      } catch {
+        /* ignore */
+      }
+      state.audioCtx = null;
+      state.mediaRecorder = null;
+      state.recording = false;
+      toast(micErrorMessage(err));
+    } finally {
+      startingRecording = false;
+      el.recordFab?.removeAttribute("aria-busy");
     }
   }
 
-  function togglePause() {
+  async function togglePause() {
     if (!state.mediaRecorder || !state.recording) return;
     if (state.paused) {
       state.mediaRecorder.resume();
-      state.audioCtx?.resume();
+      await ensureAudioContextRunning(state.audioCtx);
       state.timerBase = state.elapsedMs;
       state.startedAt = performance.now();
       state.paused = false;
