@@ -44,8 +44,11 @@
     sheetHello: document.getElementById("sheetHello"),
     manageNcBtn: document.getElementById("manageNcBtn"),
     storageFill: document.getElementById("storageFill"),
-    storageMeta: document.getElementById("storageMeta"),
     storageLabel: document.getElementById("storageLabel"),
+    storageTotal: document.getElementById("storageTotal"),
+    storageRows: document.getElementById("storageRows"),
+    storageToggle: document.getElementById("storageToggle"),
+    detailVizCard: document.getElementById("detailVizCard"),
     syncNowBtn: document.getElementById("syncNowBtn"),
     openSettingsBtn: document.getElementById("openSettingsBtn"),
     installBtn: document.getElementById("installBtn"),
@@ -192,7 +195,9 @@
   }
 
   function formatDuration(ms, withTenths = false) {
-    const total = Math.max(0, ms) / 1000;
+    const n = Number(ms);
+    const safe = Number.isFinite(n) && n > 0 ? n : 0;
+    const total = safe / 1000;
     const m = Math.floor(total / 60);
     const s = Math.floor(total % 60);
     if (withTenths) {
@@ -200,6 +205,15 @@
       return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${t}`;
     }
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  function audioDurationSec() {
+    const d = el.audio.duration;
+    if (Number.isFinite(d) && d > 0) return d;
+    const rec = state.recordings.find((r) => r.id === state.currentId);
+    const ms = Number(rec?.durationMs);
+    if (Number.isFinite(ms) && ms > 0) return ms / 1000;
+    return 0;
   }
 
   function formatTitle(ts) {
@@ -275,13 +289,20 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "rec-card";
+      const title = escapeHtml(rec.title || formatTitle(rec.createdAt));
+      const date = new Date(rec.createdAt).toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
       btn.innerHTML = `
-        <div class="rec-card-title">
-          ${rec.synced ? "" : `<svg class="cloud-off" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM3 10h1.73C5.5 7.7 8.5 6 12 6c2.76 0 5.1 1.64 6.17 4H19c1.66 0 3 1.34 3 3s-1.34 3-3 3H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.5-3.97L3 10zm8.59 6L8 12.41 9.41 11 12 13.59 17.59 8 19 9.41 12.59 16z" opacity=".4"/></svg>`}
-          <span>${escapeHtml(rec.title || formatTitle(rec.createdAt))}</span>
-          ${rec.favorite ? `<span class="rec-card-star" aria-label="Favorite">★</span>` : ""}
+        <div class="rec-card-main">
+          <div class="rec-card-title">
+            <span class="rec-card-title-text">${title}</span>
+            ${rec.favorite ? `<span class="rec-card-star" aria-label="Favorite">★</span>` : ""}
+          </div>
+          <div class="rec-card-date">${date}</div>
         </div>
-        <div class="rec-card-date">${new Date(rec.createdAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</div>
         <div class="rec-card-right">
           <span class="mini-play" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
@@ -358,14 +379,17 @@
     ]);
     const pct = quota ? Math.min(100, (usage / quota) * 100) : 0;
     el.storageFill.style.width = `${pct.toFixed(1)}%`;
-    el.storageLabel.textContent = "Site data (not just recordings)";
-    const parts = [
-      `${state.recordings.length} recording${state.recordings.length === 1 ? "" : "s"} · ${formatBytes(recBytes)}`,
-      `app cache · ${formatBytes(cacheBytes)}`,
-    ];
-    if (quota) parts.push(`browser total ${formatBytes(usage)} / ${formatBytes(quota)}`);
-    else parts.push(`browser total ${formatBytes(usage)}`);
-    el.storageMeta.textContent = parts.join(" · ");
+    el.storageLabel.textContent = "Site data";
+    const totalLabel = quota
+      ? `${formatBytes(usage)} / ${formatBytes(quota)}`
+      : formatBytes(usage);
+    if (el.storageTotal) el.storageTotal.textContent = totalLabel;
+    if (el.storageRows) {
+      el.storageRows.innerHTML = `
+        <div class="storage-row"><span>Recordings</span><span>${state.recordings.length} · ${formatBytes(recBytes)}</span></div>
+        <div class="storage-row"><span>App cache</span><span>${formatBytes(cacheBytes)}</span></div>
+        <div class="storage-row"><span>Browser total</span><span>${totalLabel}</span></div>`;
+    }
   }
 
   function formatBytes(n) {
@@ -510,15 +534,22 @@
 
   function startRecognition() {
     stopRecognition();
-    if (!state.autoTranscribe || !speechSupported()) {
+    if (!state.autoTranscribe) {
       el.langPill.hidden = true;
+      return;
+    }
+    if (!speechSupported()) {
+      el.langPill.hidden = false;
+      el.langPill.textContent = "Transcript unavailable";
       return;
     }
     const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
     const rec = new Ctor();
     rec.continuous = true;
     rec.interimResults = true;
+    rec.maxAlternatives = 1;
     rec.lang = state.lang;
+
     rec.onresult = (ev) => {
       let interim = "";
       let finalChunk = "";
@@ -538,26 +569,51 @@
       state.transcriptInterim = interim;
       renderLiveTranscript();
     };
-    rec.onerror = () => {
-      /* restart soft-fail */
+
+    rec.onerror = (ev) => {
+      const err = ev?.error || "";
+      // Fatal — stop retrying
+      if (err === "not-allowed" || err === "service-not-allowed") {
+        el.langPill.hidden = false;
+        el.langPill.textContent = "Mic blocked for transcript";
+        stopRecognition();
+        return;
+      }
+      if (err === "audio-capture") {
+        el.langPill.hidden = false;
+        el.langPill.textContent = "Transcript mic busy";
+        return;
+      }
+      // Soft errors: no-speech / aborted / network — restart below via onend
     };
+
     rec.onend = () => {
+      state.recognition = null;
       if (state.recording && !state.paused && state.autoTranscribe) {
-        try {
-          rec.start();
-        } catch {
-          /* ignore */
-        }
+        window.setTimeout(() => {
+          if (state.recording && !state.paused && !state.recognition) {
+            tryStartRec(rec);
+          }
+        }, 120);
       }
     };
-    try {
-      rec.start();
-      state.recognition = rec;
-      el.langPill.hidden = false;
-      el.langPill.textContent = `${langLabel(state.lang)} ›`;
-    } catch {
-      el.langPill.hidden = true;
+
+    function tryStartRec(instance) {
+      try {
+        instance.start();
+        state.recognition = instance;
+        el.langPill.hidden = false;
+        el.langPill.textContent = `${langLabel(state.lang)} ›`;
+      } catch (err) {
+        // InvalidStateError if already started — ignore
+        if (!state.recognition) {
+          el.langPill.hidden = false;
+          el.langPill.textContent = "Transcript starting…";
+        }
+      }
     }
+
+    tryStartRec(rec);
   }
 
   function stopRecognition() {
@@ -613,6 +669,8 @@
     });
     el.detailWaveform.hidden = mode !== "wave";
     el.detailTranscript.hidden = mode !== "text";
+    const label = el.detailVizCard?.querySelector(".viz-label");
+    if (label) label.hidden = mode !== "wave";
   }
 
   /* —— Recording —— */
@@ -761,6 +819,10 @@
         toast("Recording error");
       };
 
+      // Start speech first so Chrome can attach to the mic before MediaRecorder
+      startRecognition();
+      await new Promise((r) => setTimeout(r, 60));
+
       state.mediaRecorder.start(250);
       state.recording = true;
       state.startedAt = performance.now();
@@ -769,9 +831,8 @@
       const pauseLabel = el.pauseBtn?.querySelector("span");
       if (pauseLabel) pauseLabel.textContent = "Pause";
       setView("recording");
-      setRecView("wave");
+      setRecView(state.autoTranscribe && speechSupported() ? "text" : "wave");
       await requestWakeLock();
-      startRecognition();
       cancelAnimationFrame(state.raf);
       state.raf = requestAnimationFrame(loopVisual);
       if (state.blackoutPref) enterBlackout();
@@ -943,6 +1004,7 @@
     renderDetailTranscript(rec);
     setDetailView(rec.transcript ? state.detailView : "wave");
     setView("detail");
+    el.audio.addEventListener("loadedmetadata", updatePlayUi, { once: true });
     await el.audio.play().then(() => el.audio.pause()).catch(() => {});
     updatePlayUi();
     drawPeaks(el.detailWaveform, rec.peaks, 0);
@@ -982,15 +1044,17 @@
     const pauseIcon = el.playBtn.querySelector(".icon-pause");
     if (playIcon) playIcon.hidden = playing;
     if (pauseIcon) pauseIcon.hidden = !playing;
-    const dur = el.audio.duration || 0;
-    const cur = el.audio.currentTime || 0;
-    if (!state.seeking && Number.isFinite(dur) && dur > 0) {
+    const dur = audioDurationSec();
+    const cur = Number.isFinite(el.audio.currentTime) ? el.audio.currentTime : 0;
+    if (!state.seeking && dur > 0) {
       el.seekBar.value = String(Math.round((cur / dur) * 1000));
     }
     el.playTime.textContent = formatDuration(cur * 1000);
-    el.remainTime.textContent = `-${formatDuration(Math.max(0, (dur - cur) * 1000))}`;
+    el.remainTime.textContent = dur > 0
+      ? `-${formatDuration(Math.max(0, (dur - cur) * 1000))}`
+      : "-00:00";
     const rec = state.recordings.find((r) => r.id === state.currentId);
-    if (rec && Number.isFinite(dur) && dur > 0) {
+    if (rec && dur > 0) {
       drawPeaks(el.detailWaveform, rec.peaks, cur / dur);
     }
   }
@@ -999,6 +1063,8 @@
   el.audio.addEventListener("ended", updatePlayUi);
   el.audio.addEventListener("play", updatePlayUi);
   el.audio.addEventListener("pause", updatePlayUi);
+  el.audio.addEventListener("durationchange", updatePlayUi);
+  el.audio.addEventListener("loadedmetadata", updatePlayUi);
 
   /* —— Edit —— */
   async function openEdit() {
@@ -1375,9 +1441,105 @@
   }
 
   async function retranscribe() {
-    toast("Live re-transcribe needs mic playback — paste not supported offline");
-    // Best-effort: if SpeechRecognition exists, we can't feed audio blobs in most browsers.
-    // Keep UX honest.
+    const rec = await RecDB.get(state.currentId);
+    if (!rec) return;
+    if (!speechSupported()) {
+      toast("Speech recognition not supported in this browser");
+      return;
+    }
+    if (!state.objectUrl) {
+      toast("Open the recording first");
+      return;
+    }
+
+    setDetailView("text");
+    el.detailTranscript.innerHTML = `<p style="color:var(--text-muted)">Playing audio for transcription… use speakers (not headphones) so the mic can hear it.</p>`;
+    toast("Re-transcribe: play aloud so the mic can hear it");
+
+    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new Ctor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = state.lang;
+
+    let finalText = "";
+    const segments = [];
+    const startedAt = performance.now();
+
+    recognition.onresult = (ev) => {
+      let interim = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const r = ev.results[i];
+        if (r.isFinal) {
+          const chunk = r[0].transcript.trim();
+          if (!chunk) continue;
+          finalText = `${finalText} ${chunk}`.trim();
+          segments.push({
+            t: Math.max(0, (performance.now() - startedAt)),
+            text: chunk,
+            speaker: 1,
+          });
+        } else {
+          interim += r[0].transcript;
+        }
+      }
+      const live = finalText + (interim ? ` ${interim}` : "");
+      el.detailTranscript.innerHTML = live
+        ? `<div class="speaker-block"><div class="speaker-head"><span class="speaker-dot"></span> Transcript</div><div>${escapeHtml(live.trim())}</div></div>`
+        : `<p style="color:var(--text-muted)">Listening…</p>`;
+    };
+
+    recognition.onerror = (ev) => {
+      if (ev?.error === "not-allowed") toast("Allow microphone to re-transcribe");
+    };
+
+    const finish = async () => {
+      try {
+        recognition.onend = null;
+        recognition.stop();
+      } catch {
+        /* ignore */
+      }
+      el.audio.removeEventListener("ended", finish);
+      if (!finalText.trim()) {
+        toast("No speech detected — try again with volume up");
+        renderDetailTranscript(rec);
+        return;
+      }
+      rec.transcript = finalText.trim();
+      rec.segments = segments;
+      rec.summary = buildSummary(rec.transcript);
+      await RecDB.put(rec);
+      await refreshList();
+      renderDetailTranscript(rec);
+      if (rec.summary?.length) {
+        el.summaryCard.hidden = false;
+        el.summaryList.innerHTML = rec.summary.map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+      }
+      toast("Transcript saved");
+    };
+
+    recognition.onend = () => {
+      /* keep going until audio ends */
+      if (!el.audio.paused && !el.audio.ended) {
+        try {
+          recognition.start();
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+
+    try {
+      recognition.start();
+      el.audio.currentTime = 0;
+      await el.audio.play();
+      el.audio.addEventListener("ended", finish, { once: true });
+    } catch (err) {
+      console.error(err);
+      toast("Could not start re-transcribe");
+      renderDetailTranscript(rec);
+    }
   }
 
   /* —— Search —— */
@@ -1427,19 +1589,32 @@
   });
   el.rewindBtn.addEventListener("click", () => {
     el.audio.currentTime = Math.max(0, el.audio.currentTime - 5);
+    updatePlayUi();
   });
   el.forwardBtn.addEventListener("click", () => {
-    el.audio.currentTime = Math.min(el.audio.duration || 0, el.audio.currentTime + 10);
+    const dur = audioDurationSec();
+    el.audio.currentTime = Math.min(dur || el.audio.currentTime + 10, el.audio.currentTime + 10);
+    updatePlayUi();
   });
   el.seekBar.addEventListener("input", () => {
     state.seeking = true;
   });
   el.seekBar.addEventListener("change", () => {
-    const dur = el.audio.duration || 0;
-    el.audio.currentTime = (Number(el.seekBar.value) / 1000) * dur;
+    const dur = audioDurationSec();
+    if (dur > 0) el.audio.currentTime = (Number(el.seekBar.value) / 1000) * dur;
     state.seeking = false;
     updatePlayUi();
   });
+
+  if (el.storageToggle) {
+    el.storageToggle.addEventListener("click", () => {
+      const open = el.storageToggle.getAttribute("aria-expanded") === "true";
+      el.storageToggle.setAttribute("aria-expanded", open ? "false" : "true");
+      el.storageToggle.classList.toggle("expanded", !open);
+      if (el.storageRows) el.storageRows.hidden = open;
+      if (el.storageTotal) el.storageTotal.hidden = !open;
+    });
+  }
 
   el.detailMenuBtn.addEventListener("click", async () => {
     const rec = await RecDB.get(state.currentId);
