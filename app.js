@@ -727,7 +727,7 @@
       state.mediaRecorder.start(250);
       state.recording = true;
       state.startedAt = performance.now();
-      state.recTitle.textContent = formatTitle(Date.now());
+      el.recTitle.textContent = formatTitle(Date.now());
       el.recDot.classList.remove("paused");
       el.pauseBtn.querySelector("span").textContent = "Pause";
       setView("recording");
