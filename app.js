@@ -764,9 +764,10 @@
       state.mediaRecorder.start(250);
       state.recording = true;
       state.startedAt = performance.now();
-      el.recTitle.textContent = formatTitle(Date.now());
-      el.recDot.classList.remove("paused");
-      el.pauseBtn.querySelector("span").textContent = "Pause";
+      if (el.recTitle) el.recTitle.textContent = formatTitle(Date.now());
+      el.recDot?.classList.remove("paused");
+      const pauseLabel = el.pauseBtn?.querySelector("span");
+      if (pauseLabel) pauseLabel.textContent = "Pause";
       setView("recording");
       setRecView("wave");
       await requestWakeLock();
@@ -778,6 +779,15 @@
       console.error(err);
       state.mediaStream?.getTracks().forEach((t) => t.stop());
       state.mediaStream = null;
+      try {
+        if (state.mediaRecorder && state.mediaRecorder.state !== "inactive") {
+          state.mediaRecorder.ondataavailable = null;
+          state.mediaRecorder.onerror = null;
+          state.mediaRecorder.stop();
+        }
+      } catch {
+        /* ignore */
+      }
       try {
         await state.audioCtx?.close();
       } catch {
@@ -1658,5 +1668,15 @@
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      if (event.data?.type === "SW_UPDATED") {
+        // New deploy claimed — reload once to drop any stale shell.
+        const key = "recorder.swReloaded." + (event.data.cache || "");
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, "1");
+          location.reload();
+        }
+      }
+    });
   }
 })();
