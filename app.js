@@ -319,16 +319,53 @@
     }
   }
 
+  async function measureCacheBytes() {
+    if (!("caches" in window)) return 0;
+    let total = 0;
+    const names = await caches.keys();
+    for (const name of names) {
+      const cache = await caches.open(name);
+      const reqs = await cache.keys();
+      for (const req of reqs) {
+        const res = await cache.match(req);
+        if (!res) continue;
+        try {
+          const buf = await res.clone().arrayBuffer();
+          total += buf.byteLength;
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    return total;
+  }
+
+  async function measureRecordingBytes() {
+    let total = 0;
+    for (const rec of state.recordings) {
+      total += rec.blob?.size || 0;
+    }
+    return total;
+  }
+
   async function updateStorageCard() {
     const est = await RecDB.storageEstimate();
     const usage = est.usage || 0;
     const quota = est.quota || 0;
+    const [cacheBytes, recBytes] = await Promise.all([
+      measureCacheBytes(),
+      measureRecordingBytes(),
+    ]);
     const pct = quota ? Math.min(100, (usage / quota) * 100) : 0;
     el.storageFill.style.width = `${pct.toFixed(1)}%`;
-    el.storageMeta.textContent = quota
-      ? `${formatBytes(usage)} of ${formatBytes(quota)}`
-      : formatBytes(usage);
-    el.storageLabel.textContent = "Local storage";
+    el.storageLabel.textContent = "Site data (not just recordings)";
+    const parts = [
+      `${state.recordings.length} recording${state.recordings.length === 1 ? "" : "s"} · ${formatBytes(recBytes)}`,
+      `app cache · ${formatBytes(cacheBytes)}`,
+    ];
+    if (quota) parts.push(`browser total ${formatBytes(usage)} / ${formatBytes(quota)}`);
+    else parts.push(`browser total ${formatBytes(usage)}`);
+    el.storageMeta.textContent = parts.join(" · ");
   }
 
   function formatBytes(n) {

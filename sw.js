@@ -34,7 +34,6 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
 
-  // Never cache Nextcloud / cross-origin API traffic
   try {
     const url = new URL(request.url);
     if (url.origin !== self.location.origin) return;
@@ -42,19 +41,19 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Cache-first for precached shell only. Do NOT write new entries at runtime —
+  // that was inflating origin storage on every navigation/deploy refresh.
   event.respondWith(
     caches.match(request).then((cached) => {
-      const fetchPromise = fetch(request)
-        .then((response) => {
-          if (response && response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, copy));
+      if (cached) return cached;
+      return fetch(request)
+        .then((response) => response)
+        .catch(async () => {
+          if (request.mode === "navigate") {
+            return (await caches.match("./index.html")) || (await caches.match("./"));
           }
-          return response;
-        })
-        .catch(() => cached);
-
-      return cached || fetchPromise;
+          return cached;
+        });
     })
   );
 });
