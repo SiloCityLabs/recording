@@ -4,7 +4,7 @@ Google Recorder–style voice recorder as a standalone static PWA — no app sto
 
 **Live:** https://recording.silocitylabs.com
 
-My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **232 KB** (~137 KB transferred with gzip) — roughly **535× smaller**, fully offline once installed, and no store required.
+My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **233 KB** (~138 KB transferred with gzip) — roughly **532× smaller**, fully offline once installed, and no store required.
 
 Optional **Nextcloud** backup is planned (same-origin proxy) — disabled for now because browsers block cross-origin WebDAV (CORS).
 
@@ -31,8 +31,8 @@ Optional **Nextcloud** backup is planned (same-origin proxy) — disabled for no
 | Google Recorder (Play Store app size) | ~121 MB |
 | Google Recorder app data (no recordings) | ~4.27 MB |
 | Google Recorder cache | ~11.83 MB |
-| This PWA (all shipped files) | **~232 KB** (0.226 MB) |
-| Typical transfer (gzip text + icons) | **~137 KB** |
+| This PWA (all shipped files) | **~233 KB** (0.227 MB) |
+| Typical transfer (gzip text + icons) | **~138 KB** |
 
 > **Maintainers / agents:** refresh these numbers on **every deploy** that changes shipped assets. See `AGENTS.md` for the measurement command.
 

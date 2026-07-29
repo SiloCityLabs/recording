@@ -403,7 +403,10 @@
     const totalLabel = quota
       ? `${formatBytes(usage)} / ${formatBytes(quota)}`
       : formatBytes(usage);
-    if (el.storageTotal) el.storageTotal.textContent = totalLabel;
+    if (el.storageTotal) {
+      el.storageTotal.textContent = totalLabel;
+      el.storageTotal.hidden = false;
+    }
     if (el.storageRows) {
       el.storageRows.innerHTML = `
         <div class="storage-row"><span>Recordings</span><span>${state.recordings.length} · ${formatBytes(recBytes)}</span></div>
@@ -1694,11 +1697,10 @@
 
   if (el.storageToggle) {
     el.storageToggle.addEventListener("click", () => {
-      const open = el.storageToggle.getAttribute("aria-expanded") === "true";
-      el.storageToggle.setAttribute("aria-expanded", open ? "false" : "true");
-      el.storageToggle.classList.toggle("expanded", !open);
-      if (el.storageRows) el.storageRows.hidden = open;
-      if (el.storageTotal) el.storageTotal.hidden = !open;
+      const next = el.storageToggle.getAttribute("aria-expanded") !== "true";
+      el.storageToggle.setAttribute("aria-expanded", next ? "true" : "false");
+      el.storageToggle.classList.toggle("expanded", next);
+      if (el.storageRows) el.storageRows.hidden = !next;
     });
   }
 
