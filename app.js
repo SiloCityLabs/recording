@@ -141,6 +141,7 @@
     lang: localStorage.getItem(STORAGE_LANG) || "en-US",
     nc: Nextcloud.loadConfig(),
     deferredPrompt: null,
+    settingsReturnView: null,
     speedIndex: 0,
     recView: "wave",
     detailView: "wave",
@@ -1128,7 +1129,12 @@
 
   function applyCardProgress(card, ratio) {
     const remaining = card.querySelector(".rec-card-remaining");
-    if (remaining) remaining.style.left = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+    if (!remaining) return;
+    const clamped = Math.max(0, Math.min(1, ratio));
+    remaining.style.left = `${clamped * 100}%`;
+    // Material-style gap between the played and remaining segments
+    remaining.style.marginLeft = clamped > 0.01 ? "4px" : "0";
+    remaining.hidden = clamped >= 0.999;
   }
 
   function setCardProgress(id, ratio) {
@@ -1335,19 +1341,19 @@
   }
 
   /* —— PIN / blackout —— */
+  const PIN_OK = "OK";
+  const PIN_DEL = "⌫";
+
   function buildPinPad() {
     el.pinPad.innerHTML = "";
-    const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
+    const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", PIN_OK, "0", PIN_DEL];
     keys.forEach((k) => {
-      if (!k) {
-        const spacer = document.createElement("div");
-        el.pinPad.appendChild(spacer);
-        return;
-      }
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "pin-key";
+      btn.className = k === PIN_OK ? "pin-key pin-key-ok" : "pin-key";
       btn.textContent = k;
+      if (k === PIN_OK) btn.setAttribute("aria-label", "Confirm PIN");
+      if (k === PIN_DEL) btn.setAttribute("aria-label", "Delete last digit");
       btn.addEventListener("click", () => onPinKey(k));
       el.pinPad.appendChild(btn);
     });
@@ -1366,95 +1372,94 @@
     }
   }
 
-  function openPinModal(mode) {
+  function setPinMode(mode) {
     state.pinMode = mode;
     state.pinBuffer = "";
-    state.pinConfirm = "";
     if (mode === "setup") {
+      state.pinConfirm = "";
       el.pinModalTitle.textContent = "Set PIN";
-      el.pinModalSub.textContent = "Choose a 4–8 digit PIN for blackout unlock.";
+      el.pinModalSub.textContent = "Choose 4–8 digits, then press OK.";
       el.pinClearBtn.hidden = !state.pin;
+      el.pinCancelBtn.hidden = false;
     } else if (mode === "confirm") {
       el.pinModalTitle.textContent = "Confirm PIN";
       el.pinModalSub.textContent = "Enter the same PIN again.";
       el.pinClearBtn.hidden = true;
+      el.pinCancelBtn.hidden = false;
     } else {
+      state.pinConfirm = "";
       el.pinModalTitle.textContent = "Enter PIN";
       el.pinModalSub.textContent = "Unlock to leave blackout.";
       el.pinClearBtn.hidden = true;
-      el.pinCancelBtn.hidden = mode === "unlock";
+      // Unlock must not be dismissible, otherwise the PIN protects nothing.
+      el.pinCancelBtn.hidden = true;
     }
     renderPinDots();
+  }
+
+  function openPinModal(mode) {
+    setPinMode(mode);
     el.pinModal.hidden = false;
   }
 
+  function closePinModal() {
+    el.pinModal.hidden = true;
+    state.pinBuffer = "";
+    state.pinConfirm = "";
+    el.pinCancelBtn.hidden = false;
+  }
+
+  function submitPin() {
+    if (state.pinMode === "setup") {
+      if (state.pinBuffer.length < 4) {
+        toast("Use at least 4 digits");
+        return;
+      }
+      state.pinConfirm = state.pinBuffer;
+      setPinMode("confirm");
+      return;
+    }
+    if (state.pinMode === "confirm") {
+      if (state.pinBuffer === state.pinConfirm) {
+        state.pin = state.pinBuffer;
+        localStorage.setItem(STORAGE_PIN, state.pin);
+        el.pinStatus.textContent = "On";
+        closePinModal();
+        toast("PIN saved");
+      } else {
+        toast("PINs did not match");
+        setPinMode("setup");
+      }
+      return;
+    }
+    if (state.pinBuffer === state.pin) {
+      closePinModal();
+      exitBlackout(true);
+      state.unlockResolver?.();
+      state.unlockResolver = null;
+    } else {
+      toast("Wrong PIN");
+      state.pinBuffer = "";
+      renderPinDots();
+    }
+  }
+
   function onPinKey(k) {
-    if (k === "⌫") {
+    if (k === PIN_DEL) {
       state.pinBuffer = state.pinBuffer.slice(0, -1);
       renderPinDots();
+      return;
+    }
+    if (k === PIN_OK) {
+      submitPin();
       return;
     }
     if (state.pinBuffer.length >= 8) return;
     state.pinBuffer += k;
     renderPinDots();
-    if (state.pinMode === "setup" && state.pinBuffer.length >= 4) {
-      // wait for user to hit length they want — auto-advance at 4 if they pause? Better: advance when 4+ and they stop... Use 4 minimum auto when length>=4 after short delay, or when they reach 4 and press same again.
-      // Simpler: when length is 4–8, treat next identical completion via reaching 4 then confirming.
-      if (state.pinBuffer.length === 4) {
-        // allow longer; use confirm when they tap a hidden OK — auto confirm at 4 for simplicity, allow 5-8 if they keep typing within 800ms
-        clearTimeout(onPinKey._t);
-        onPinKey._t = setTimeout(() => {
-          if (state.pinMode === "setup" && state.pinBuffer.length >= 4) {
-            state.pinConfirm = state.pinBuffer;
-            state.pinBuffer = "";
-            state.pinMode = "confirm";
-            el.pinModalTitle.textContent = "Confirm PIN";
-            el.pinModalSub.textContent = "Enter the same PIN again.";
-            renderPinDots();
-          }
-        }, 600);
-      }
-      if (state.pinBuffer.length === 8) {
-        clearTimeout(onPinKey._t);
-        state.pinConfirm = state.pinBuffer;
-        state.pinBuffer = "";
-        state.pinMode = "confirm";
-        el.pinModalTitle.textContent = "Confirm PIN";
-        renderPinDots();
-      }
-    } else if (state.pinMode === "confirm") {
-      if (state.pinBuffer.length === state.pinConfirm.length) {
-        if (state.pinBuffer === state.pinConfirm) {
-          state.pin = state.pinBuffer;
-          localStorage.setItem(STORAGE_PIN, state.pin);
-          el.pinStatus.textContent = "On";
-          el.pinModal.hidden = false;
-          el.pinModal.hidden = true;
-          toast("PIN saved");
-        } else {
-          toast("PINs did not match");
-          state.pinBuffer = "";
-          state.pinConfirm = "";
-          state.pinMode = "setup";
-          el.pinModalTitle.textContent = "Set PIN";
-          renderPinDots();
-        }
-      }
-    } else if (state.pinMode === "unlock") {
-      if (state.pinBuffer.length === state.pin.length) {
-        if (state.pinBuffer === state.pin) {
-          el.pinModal.hidden = true;
-          el.pinCancelBtn.hidden = false;
-          exitBlackout(true);
-          state.unlockResolver?.();
-          state.unlockResolver = null;
-        } else {
-          toast("Wrong PIN");
-          state.pinBuffer = "";
-          renderPinDots();
-        }
-      }
-    }
+    // Auto-submit only where the target length is already known.
+    if (state.pinMode === "confirm" && state.pinBuffer.length === state.pinConfirm.length) submitPin();
+    else if (state.pinMode === "unlock" && state.pinBuffer.length === state.pin.length) submitPin();
   }
 
   function enterBlackout() {
@@ -1801,16 +1806,27 @@
     el.profileSheet.hidden = true;
     showNcUnavailable();
   });
-  el.openSettingsBtn.addEventListener("click", () => {
-    el.profileSheet.hidden = true;
+  function openSettings() {
+    // Remember where we came from — leaving settings must not abandon an
+    // in-progress recording or an open recording detail.
+    state.settingsReturnView = state.view === "settings" ? "home" : state.view;
     applySettingsLabels();
     setView("settings");
+  }
+
+  el.openSettingsBtn.addEventListener("click", () => {
+    el.profileSheet.hidden = true;
+    openSettings();
   });
   el.syncNowBtn.addEventListener("click", () => {
     el.profileSheet.hidden = true;
     showNcUnavailable();
   });
-  el.settingsBackBtn.addEventListener("click", () => setView("home"));
+  el.settingsBackBtn.addEventListener("click", () => {
+    const back = state.settingsReturnView;
+    setView(back && el.views[back] ? back : "home");
+    state.settingsReturnView = null;
+  });
 
   document.querySelectorAll("[data-settings]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1864,15 +1880,12 @@
   });
   el.ncTestBtn.addEventListener("click", () => showNcUnavailable());
 
-  el.pinCancelBtn.addEventListener("click", () => {
-    el.pinModal.hidden = true;
-    el.pinCancelBtn.hidden = false;
-  });
+  el.pinCancelBtn.addEventListener("click", closePinModal);
   el.pinClearBtn.addEventListener("click", () => {
     state.pin = "";
     localStorage.removeItem(STORAGE_PIN);
     el.pinStatus.textContent = "Off";
-    el.pinModal.hidden = true;
+    closePinModal();
     toast("PIN cleared");
   });
 
@@ -1881,10 +1894,25 @@
     else exitBlackout(true);
   });
 
-  el.recMenuBtn.addEventListener("click", () => {
-    applySettingsLabels();
-    setView("settings");
+  document.addEventListener("keydown", (e) => {
+    if (!el.pinModal.hidden) {
+      if (/^[0-9]$/.test(e.key)) onPinKey(e.key);
+      else if (e.key === "Backspace") onPinKey(PIN_DEL);
+      else if (e.key === "Enter") onPinKey(PIN_OK);
+      // Escape must not dismiss the blackout unlock prompt.
+      else if (e.key === "Escape" && state.pinMode !== "unlock") closePinModal();
+      else return;
+      e.preventDefault();
+      return;
+    }
+    if (e.key !== "Escape") return;
+    if (!el.ncModal.hidden) el.ncModal.hidden = true;
+    else if (!el.detailMenu.hidden) el.detailMenu.hidden = true;
+    else if (!el.profileSheet.hidden) el.profileSheet.hidden = true;
+    else if (!el.blackout.hidden && !state.pin) exitBlackout(true);
   });
+
+  el.recMenuBtn.addEventListener("click", openSettings);
 
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();

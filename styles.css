@@ -16,6 +16,7 @@
   --record-inner: #b71c1c;
   --ok: #81c995;
   --border: rgba(255, 255, 255, 0.08);
+  --track: rgba(255, 255, 255, 0.3);
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   --radius: 24px;
   --radius-sm: 16px;
@@ -43,6 +44,7 @@
   --record: #e53935;
   --record-inner: #b71c1c;
   --border: rgba(0, 0, 0, 0.08);
+  --track: rgba(0, 0, 0, 0.2);
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
 }
 
@@ -62,6 +64,7 @@
     --wave-dim: #8ab4f8;
     --danger: #c5221f;
     --border: rgba(0, 0, 0, 0.08);
+    --track: rgba(0, 0, 0, 0.2);
     --shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
   }
 }
@@ -227,11 +230,10 @@ button {
 
 .rec-card {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 16px 18px;
-  margin-bottom: 10px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+  margin-bottom: 12px;
   border-radius: var(--radius);
   background: var(--bg-card);
   text-align: left;
@@ -240,54 +242,63 @@ button {
 .rec-card:active {
   filter: brightness(1.08);
 }
-.rec-card-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.rec-card-title {
+.rec-card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 1.05rem;
-  font-weight: 500;
+  gap: 12px;
   min-width: 0;
 }
-.rec-card-title-text {
+.rec-card-cloud {
+  color: var(--text);
+  flex-shrink: 0;
+}
+.rec-card-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 1.45rem;
+  font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.rec-card-date {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-.rec-card-right {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.mini-play {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--accent-strong);
-  color: #fff;
-  display: grid;
-  place-items: center;
-}
-.rec-card-dur {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
-}
 .rec-card-star {
   color: var(--accent);
   flex-shrink: 0;
+}
+.rec-card-play {
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.rec-card-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+.rec-card-dur {
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.rec-card-track {
+  position: relative;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--track);
+  margin-top: 10px;
+}
+/* Coral marks the portion not yet listened to; gray is already played. */
+.rec-card-remaining {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: 0;
+  border-radius: 999px;
+  background: var(--accent);
 }
 
 .home-fab-wrap {
@@ -577,20 +588,22 @@ button {
 }
 .skip-graphic {
   position: relative;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
 }
 .skip-graphic svg {
   display: block;
 }
+/* Digit sits inside the arrow loop, which is centred slightly below the gap. */
 .skip-btn .skip-num {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 0.62rem;
+  padding-top: 3px;
+  font-size: 0.6rem;
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -1115,6 +1128,12 @@ button {
 .pin-key:active {
   background: var(--accent-soft);
 }
+.pin-key-ok {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 1rem;
+  font-weight: 600;
+}
 
 .blackout {
   position: fixed;
@@ -1124,6 +1143,11 @@ button {
   display: grid;
   place-items: center;
   cursor: pointer;
+}
+/* The unlock prompt is raised above the blackout, otherwise the keypad is
+   painted underneath it and blackout can never be dismissed. */
+#pinModal {
+  z-index: 110;
 }
 .blackout-hint {
   color: #333;
@@ -1145,16 +1169,18 @@ button {
   color: #fff;
   padding: 12px 18px;
   border-radius: 999px;
-  z-index: 60;
+  z-index: 120;
   max-width: min(90vw, 420px);
   text-align: center;
   box-shadow: var(--shadow);
   font-size: 0.95rem;
 }
 
-/* —— Landscape phone / tablet: home —— */
-@media (orientation: landscape) and (max-height: 560px),
-       (orientation: landscape) and (min-width: 700px) {
+/* —— Landscape phone / tablet / desktop ——
+   One condition, so landscape viewports between 561px and 699px tall are not
+   dropped back to the portrait stack. 560px is the narrowest width that fits
+   the stage plus the transport column. */
+@media (orientation: landscape) and (min-width: 560px) {
   .view-home .home-body {
     flex-direction: row;
     align-items: stretch;
@@ -1175,28 +1201,40 @@ button {
     height: 76px;
   }
 
+  /* Recording and edit keep their stage and controls as siblings of the view,
+     so the two-column split has to happen on the view itself. Detail already
+     wraps both in .detail-body. */
   .view-recording,
+  .view-edit {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(min(300px, 44%), 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 16px;
+  }
+  .view-recording .rec-header,
+  .view-edit .edit-header {
+    grid-column: 1 / -1;
+  }
   .view-detail {
     flex-direction: column;
   }
-  .view-recording .rec-stage,
   .view-detail .detail-body {
     flex-direction: row;
     gap: 16px;
   }
-  .view-recording .viz-card,
   .view-detail .detail-main {
     flex: 1.4;
+    min-width: 0;
   }
   .view-recording .rec-controls,
+  .view-edit .edit-controls,
   .view-detail .detail-controls {
-    flex: 1;
     justify-content: center;
     padding-top: 0;
-    min-width: min(360px, 42vw);
   }
-  .view-detail .detail-body {
-    flex-direction: row;
+  .view-detail .detail-controls {
+    flex: 1;
+    min-width: min(300px, 44%);
   }
   .view-detail .summary-card {
     max-height: 40%;
@@ -1205,8 +1243,23 @@ button {
   .timer {
     font-size: clamp(1.6rem, 5vw, 2.3rem);
   }
-  .rec-actions .btn {
+  /* The transport row now shares a row with the stage, so it has to survive
+     being narrow instead of spilling outside its column. */
+  .rec-actions,
+  .play-row {
+    gap: 8px;
+  }
+  .rec-actions .btn,
+  .play-row .btn {
     min-height: 48px;
+    padding: 0 14px;
+  }
+  .play-btn {
+    max-width: 190px;
+  }
+  .round-btn {
+    width: 48px;
+    height: 48px;
   }
 }
 

@@ -33,7 +33,20 @@ Ignore Material You dynamic wallpaper colors from screenshots — stock pulls th
 | **Playback landscape** | Waveform / transcript card on the **left**; seek + transport on the **right** |
 | **Wide desktop** | Same landscape split, capped content width |
 
-Reference screenshots (gitignored from deploy, kept for design): `images/screenshots/`.
+Reference screenshots (kept for design, not shipped): `images/screenshots/`.
+
+### Recording list card
+
+Match `images/screenshots/tablet-landscape-home-recording.png`. Three stacked rows, **not** a
+left/right split:
+
+1. Cloud-off icon + title (`Jul 29 at 8:54 AM`) with a bare coral play triangle pushed right
+2. Weekday date left, duration right, both muted
+3. Full-width progress track
+
+On the track, **coral is the portion not yet listened to** and gray is what has already played, with
+a small gap between the two segments. A brand-new recording is therefore almost fully coral; a
+fully-played one is all gray.
 
 ## Source map
 
