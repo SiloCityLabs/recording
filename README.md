@@ -4,7 +4,7 @@ Google Recorder–style voice recorder as a standalone static PWA — no app sto
 
 **Live:** https://recording.silocitylabs.com
 
-My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **233 KB** (~138 KB transferred with gzip) — roughly **532× smaller**, fully offline once installed, and no store required.
+My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **244 KB** (~141 KB transferred with gzip) — roughly **508× smaller**, fully offline once installed, and no store required.
 
 Optional **Nextcloud** backup is planned (same-origin proxy) — disabled for now because browsers block cross-origin WebDAV (CORS).
 
@@ -18,9 +18,10 @@ Optional **Nextcloud** backup is planned (same-origin proxy) — disabled for no
 - Crop & remove (saves a copy)
 - Search titles & transcripts
 - Favorites, rename, share / download, delete
+- Swipe a list card either way to delete, with an Undo snackbar
 - Nextcloud backup UI present but disabled until a same-origin proxy lands
 - Screen wake lock while recording (Wake Lock API)
-- Screen blackout + optional PIN unlock (browsers can’t record in the background)
+- Screen blackout + optional PIN unlock (browsers can’t record in the background) — fully dark, no status bar or toolbar glow
 - Installable offline PWA
 - Responsive: phone / tablet / desktop, portrait & landscape
 
@@ -31,8 +32,8 @@ Optional **Nextcloud** backup is planned (same-origin proxy) — disabled for no
 | Google Recorder (Play Store app size) | ~121 MB |
 | Google Recorder app data (no recordings) | ~4.27 MB |
 | Google Recorder cache | ~11.83 MB |
-| This PWA (all shipped files) | **~233 KB** (0.227 MB) |
-| Typical transfer (gzip text + icons) | **~138 KB** |
+| This PWA (all shipped files) | **~244 KB** (0.238 MB) |
+| Typical transfer (gzip text + icons) | **~141 KB** |
 
 > **Maintainers / agents:** refresh these numbers on **every deploy** that changes shipped assets. See `AGENTS.md` for the measurement command.
 

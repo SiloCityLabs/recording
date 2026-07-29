@@ -6,7 +6,8 @@
   "scope": "./",
   "background_color": "#0b0e14",
   "theme_color": "#0b0e14",
-  "display": "standalone",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
   "orientation": "any",
   "categories": ["utilities", "productivity", "music"],
   "icons": [

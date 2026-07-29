@@ -488,7 +488,10 @@
     <div class="blackout-hint" id="blackoutHint">Recording… tap to unlock</div>
   </div>
 
-  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden>
+    <span id="toastMsg"></span>
+    <button type="button" class="toast-action" id="toastAction" hidden></button>
+  </div>
   <audio id="audioEl" preload="metadata"></audio>
 
   <script src="db.js?v=__BUILD_HASH__" defer></script>

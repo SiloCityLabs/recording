@@ -12,6 +12,8 @@
   --wave: #8ab4f8;
   --wave-dim: #5f7aa8;
   --danger: #e87070;
+  --danger-container: #f2b8b5;
+  --on-danger-container: #601410;
   --record: #e53935;
   --record-inner: #b71c1c;
   --ok: #81c995;
@@ -41,6 +43,8 @@
   --wave: #1a73e8;
   --wave-dim: #8ab4f8;
   --danger: #c5221f;
+  --danger-container: #f9dedc;
+  --on-danger-container: #8c1d18;
   --record: #e53935;
   --record-inner: #b71c1c;
   --border: rgba(0, 0, 0, 0.08);
@@ -63,6 +67,8 @@
     --wave: #1a73e8;
     --wave-dim: #8ab4f8;
     --danger: #c5221f;
+    --danger-container: #f9dedc;
+    --on-danger-container: #8c1d18;
     --border: rgba(0, 0, 0, 0.08);
     --track: rgba(0, 0, 0, 0.2);
     --shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
@@ -233,7 +239,6 @@ button {
   flex-direction: column;
   gap: 12px;
   padding: 22px;
-  margin-bottom: 12px;
   border-radius: var(--radius);
   background: var(--bg-card);
   text-align: left;
@@ -299,6 +304,49 @@ button {
   left: 0;
   border-radius: 999px;
   background: var(--accent);
+}
+
+/* Swipe either way to delete: the card slides off a delete panel that sits
+   behind it, with a trash icon at both ends so the revealed side shows one. */
+.rec-swipe {
+  position: relative;
+  margin-bottom: 12px;
+  border-radius: var(--radius);
+}
+.rec-swipe-bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30px;
+  border-radius: var(--radius);
+  background: var(--danger-container);
+  color: var(--on-danger-container);
+  opacity: 0;
+  pointer-events: none;
+}
+.rec-swipe.swiping .rec-swipe-bg,
+.rec-swipe.removing .rec-swipe-bg {
+  opacity: 1;
+}
+.rec-swipe .rec-card {
+  position: relative;
+  touch-action: pan-y;
+}
+/* The press highlight would read as a colour change on a card being dragged. */
+.rec-swipe.swiping .rec-card:active {
+  filter: none;
+}
+.rec-swipe.snapping .rec-card {
+  transition: transform 0.18s ease-out;
+}
+.rec-swipe.removing {
+  overflow: hidden;
+  transition:
+    height 0.18s ease-out,
+    margin-bottom 0.18s ease-out,
+    opacity 0.18s ease-out;
 }
 
 .home-fab-wrap {
@@ -1174,6 +1222,21 @@ button {
   text-align: center;
   box-shadow: var(--shadow);
   font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.toast-action {
+  flex-shrink: 0;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  font: inherit;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* —— Landscape phone / tablet / desktop ——

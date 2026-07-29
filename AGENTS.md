@@ -48,6 +48,12 @@ On the track, **coral is the portion not yet listened to** and gray is what has 
 a small gap between the two segments. A brand-new recording is therefore almost fully coral; a
 fully-played one is all gray.
 
+Swiping a card **left or right** slides it off a `--danger-container` panel that carries a trash icon
+at both ends, so whichever side is revealed shows one — see
+`images/screenshots/phone-home-swipe-delete.png`. Past ~40% of the card width it deletes and offers
+**Undo** in the toast; a shorter drag snaps back. Vertical drags must still scroll the list, and the
+click that follows a drag must not open the recording.
+
 ## Source map
 
 | File | Role |
@@ -59,7 +65,7 @@ fully-played one is all gray.
 | `app.js` | UI, MediaRecorder, waveform, speech, playback, edit, PIN/blackout, wake lock |
 | `sw.js` | Offline cache — cache name stamped with `__BUILD_HASH__` at deploy |
 | `.github/workflows/deploy.yml` | Copies static files → Pages artifact; replaces `__BUILD_HASH__` with short git SHA |
-| `manifest.webmanifest` | PWA manifest (`orientation: any`) |
+| `manifest.webmanifest` | PWA manifest (`display: fullscreen` + `display_override`, `orientation: any`) |
 | `CNAME` | `recording.silocitylabs.com` |
 | `icons/` | Circular `any` icons + full-bleed `maskable` icons |
 | `images/icon.png` | Source brand artwork; derive icons from this |
@@ -71,7 +77,7 @@ fully-played one is all gray.
 - Relative URLs only (`./`) so project Pages + custom domain both work.
 - Keep `user-select: none` on chrome; **transcript / summary / inputs must stay selectable**.
 - PWA icons: `purpose: any` = circular with transparent corners; `purpose: maskable` = opaque full-bleed square.
-- After icon/manifest changes, users often must **uninstall + reinstall** the PWA for the launcher icon to refresh.
+- After icon/manifest changes, users often must **uninstall + reinstall** the PWA for the launcher icon and the `display` mode to refresh.
 - Prefer matching Google Recorder UX over inventing new patterns.
 - Menu / profile footer must include **Made by SiloCityLabs**, **GitHub**, and **Build `__BUILD_HASH__`** (stamped at deploy).
 - Never commit Nextcloud credentials. App passwords live only in the user’s `localStorage`.
@@ -85,9 +91,17 @@ Each recording in IndexedDB:
 ## Features to preserve
 
 - Wake Lock while recording (`navigator.wakeLock`)
-- Blackout overlay + optional PIN
+- Blackout overlay + optional PIN. Blackout must be **fully** dark: the installed app runs
+  `display: fullscreen` so there is no status bar, and blackout also sets `theme-color` to
+  `#000000` and calls `requestFullscreen({ navigationUI: "hide" })` for browser tabs and
+  `standalone` fallbacks. A lit status bar or toolbar defeats the feature.
 - Nextcloud optional sync
 - Build hash in nav/menus
+- Swipe-to-delete on list cards, with an Undo toast
+- Live transcript survives Chrome ending speech sessions: a fresh `SpeechRecognition`
+  per attempt plus a watchdog, never gated on `state.recording`
+- The SW update reload never fires on first install or mid-recording — it waits for
+  the recording to be saved (see `applyPendingShellReload`)
 
 ## Deploy checklist (every meaningful ship)
 

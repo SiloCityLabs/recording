@@ -125,6 +125,8 @@
     blackout: document.getElementById("blackout"),
     blackoutHint: document.getElementById("blackoutHint"),
     toast: document.getElementById("toast"),
+    toastMsg: document.getElementById("toastMsg"),
+    toastAction: document.getElementById("toastAction"),
     audio: document.getElementById("audioEl"),
     themeColor: document.getElementById("themeColor"),
   };
@@ -162,6 +164,7 @@
     transcriptFinal: "",
     transcriptInterim: "",
     transcriptSegments: [],
+    transcriptNote: "",
     raf: 0,
     // playback
     objectUrl: null,
@@ -190,13 +193,28 @@
     return `rec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   }
 
-  function toast(msg) {
-    el.toast.textContent = msg;
+  function hideToast() {
+    el.toast.hidden = true;
+    el.toastAction.hidden = true;
+    el.toastAction.onclick = null;
+  }
+
+  function toast(msg, action) {
+    el.toastMsg.textContent = msg;
+    if (action) {
+      el.toastAction.textContent = action.label;
+      el.toastAction.hidden = false;
+      el.toastAction.onclick = () => {
+        hideToast();
+        action.onClick();
+      };
+    } else {
+      el.toastAction.hidden = true;
+      el.toastAction.onclick = null;
+    }
     el.toast.hidden = false;
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => {
-      el.toast.hidden = true;
-    }, 1800);
+    toast._t = setTimeout(hideToast, action ? 6000 : 1800);
   }
 
   // Every clock string in the UI goes through here, so it must never be able to
@@ -267,11 +285,15 @@
     return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   }
 
+  function setThemeColor(color) {
+    if (el.themeColor) el.themeColor.setAttribute("content", color);
+  }
+
   function applyTheme() {
     document.documentElement.dataset.theme = state.theme;
     el.themeSettingLabel.textContent = state.theme[0].toUpperCase() + state.theme.slice(1);
-    const color = resolvedTheme() === "light" ? "#f7f5fa" : "#0b0e14";
-    if (el.themeColor) el.themeColor.setAttribute("content", color);
+    if (el.blackout && !el.blackout.hidden) return;
+    setThemeColor(resolvedTheme() === "light" ? "#f7f5fa" : "#0b0e14");
   }
 
   function setView(name) {
@@ -292,6 +314,8 @@
   }
 
   const CLOUD_OFF_SVG = `<svg class="rec-card-cloud" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.27 2 2 3.27l2.72 2.72A6.5 6.5 0 0 0 6 19h11.73l3 3L22 20.73 3.27 2zM6 17a4.5 4.5 0 0 1-.33-8.99l9.99 9.99H6zm13.35-6.96A7.49 7.49 0 0 0 12 4c-1.48 0-2.85.44-4.01 1.17l1.46 1.46A5.4 5.4 0 0 1 12 6a5.5 5.5 0 0 1 5.5 5.5v.5H19a3 3 0 0 1 2.07 5.17l1.42 1.42A5 5 0 0 0 19.35 10.04z"/></svg>`;
+
+  const TRASH_SVG = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M15 4V3H9v1H4v2h1v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6h1V4h-5zm2 15H7V6h10v13zM9 8h2v9H9V8zm4 0h2v9h-2V8z"/></svg>`;
 
   function renderList(container, items) {
     container.innerHTML = "";
@@ -331,7 +355,140 @@
         <div class="rec-card-track"><span class="rec-card-remaining"></span></div>`;
       applyCardProgress(btn, state.cardProgress[rec.id] || 0);
       btn.addEventListener("click", () => openDetail(rec.id));
-      container.appendChild(btn);
+
+      const row = document.createElement("div");
+      row.className = "rec-swipe";
+      row.dataset.id = rec.id;
+      const bg = document.createElement("div");
+      bg.className = "rec-swipe-bg";
+      bg.setAttribute("aria-hidden", "true");
+      bg.innerHTML = `${TRASH_SVG}${TRASH_SVG}`;
+      row.append(bg, btn);
+      attachSwipeToDelete(row, btn, rec.id);
+      container.appendChild(row);
+    });
+  }
+
+  const SWIPE_LOCK_PX = 10;
+  const SWIPE_MIN_PX = 72;
+  const SWIPE_RATIO = 0.4;
+
+  function attachSwipeToDelete(row, card, id) {
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let dx = 0;
+    let locked = false;
+
+    function reset() {
+      pointerId = null;
+      dx = 0;
+      locked = false;
+      row.classList.remove("swiping");
+    }
+
+    // Swallow the click that a browser dispatches after a drag, and consume the
+    // flag so a later keyboard activation still opens the recording.
+    card.addEventListener(
+      "click",
+      (ev) => {
+        if (card.dataset.swiped !== "1") return;
+        delete card.dataset.swiped;
+        ev.preventDefault();
+        ev.stopPropagation();
+      },
+      true
+    );
+
+    card.addEventListener("pointerdown", (ev) => {
+      if (ev.pointerType === "mouse" && ev.button !== 0) return;
+      delete card.dataset.swiped;
+      pointerId = ev.pointerId;
+      startX = ev.clientX;
+      startY = ev.clientY;
+      dx = 0;
+      locked = false;
+      row.classList.remove("snapping");
+    });
+
+    card.addEventListener("pointermove", (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      const mx = ev.clientX - startX;
+      const my = ev.clientY - startY;
+      if (!locked) {
+        // Let a vertical drag scroll the list instead of swiping the card.
+        if (Math.abs(my) > Math.abs(mx) && Math.abs(my) > SWIPE_LOCK_PX) {
+          reset();
+          return;
+        }
+        if (Math.abs(mx) < SWIPE_LOCK_PX) return;
+        locked = true;
+        row.classList.add("swiping");
+        try {
+          card.setPointerCapture(pointerId);
+        } catch {
+          /* ignore */
+        }
+      }
+      dx = mx;
+      card.style.transform = `translateX(${dx}px)`;
+    });
+
+    card.addEventListener("pointerup", (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      const width = row.offsetWidth || 1;
+      const committed = locked && Math.abs(dx) >= Math.max(SWIPE_MIN_PX, width * SWIPE_RATIO);
+      // The click that follows this pointerup must not open the recording.
+      if (locked) card.dataset.swiped = "1";
+      row.classList.add("snapping");
+      if (committed) {
+        card.style.transform = `translateX(${dx > 0 ? width : -width}px)`;
+        swipeDelete(row, id);
+      } else {
+        card.style.transform = "";
+      }
+      reset();
+    });
+
+    card.addEventListener("pointercancel", (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      row.classList.add("snapping");
+      card.style.transform = "";
+      reset();
+    });
+  }
+
+  async function swipeDelete(row, id) {
+    const rec = await RecDB.get(id);
+    if (!rec) {
+      await refreshList();
+      return;
+    }
+    const height = row.offsetHeight;
+    row.classList.add("removing");
+    row.style.height = `${height}px`;
+    requestAnimationFrame(() => {
+      row.style.height = "0";
+      row.style.marginBottom = "0";
+      row.style.opacity = "0";
+    });
+    await RecDB.remove(id);
+    if (state.currentId === id) {
+      stopAudio();
+      state.currentId = null;
+    }
+    delete state.cardProgress[id];
+    await new Promise((r) => setTimeout(r, 190));
+    await refreshList();
+    if (state.view === "search") runSearch(el.searchInput.value);
+    toast("Recording deleted", {
+      label: "Undo",
+      onClick: async () => {
+        await RecDB.put(rec);
+        await refreshList();
+        if (state.view === "search") runSearch(el.searchInput.value);
+        toast("Recording restored");
+      },
     });
   }
 
@@ -552,27 +709,64 @@
   }
 
   /* —— Speech recognition —— */
+  const RECOG_RESTART_MS = 350;
+  const RECOG_WATCHDOG_MS = 2500;
+  let recogWanted = false;
+  let recogInstance = null;
+  let recogRestartTimer = 0;
+  let recogWatchdog = 0;
+  let recogHalted = "";
+
   function speechSupported() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   }
 
+  function setLangPill(text) {
+    if (!el.langPill) return;
+    el.langPill.hidden = false;
+    el.langPill.textContent = text;
+  }
+
   function startRecognition() {
     stopRecognition();
+    state.transcriptNote = "";
     if (!state.autoTranscribe) {
-      el.langPill.hidden = true;
+      if (el.langPill) el.langPill.hidden = true;
+      state.transcriptNote = "Auto transcribe is off — turn it on in Settings.";
+      renderLiveTranscript();
       return;
     }
     if (!speechSupported()) {
-      el.langPill.hidden = false;
-      el.langPill.textContent = "Transcript unavailable";
+      setLangPill("Transcript unavailable");
+      state.transcriptNote =
+        "This browser has no Web Speech API, so live transcript is unavailable. Chrome, Edge, and Safari support it.";
+      renderLiveTranscript();
       return;
     }
+    recogWanted = true;
+    recogHalted = "";
+    spawnRecognition();
+    // Chrome ends sessions on its own (silence, network blips, throttling) and a
+    // failed restart fires no further events, so poll the desired state instead.
+    recogWatchdog = window.setInterval(() => {
+      if (recogWanted && !recogInstance && !recogRestartTimer) spawnRecognition();
+    }, RECOG_WATCHDOG_MS);
+  }
+
+  function spawnRecognition() {
+    if (!recogWanted || recogInstance || recogHalted) return;
     const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
     const rec = new Ctor();
     rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 1;
     rec.lang = state.lang;
+
+    rec.onstart = () => {
+      state.transcriptNote = "";
+      setLangPill(`${langLabel(state.lang)} ›`);
+      renderLiveTranscript();
+    };
 
     rec.onresult = (ev) => {
       let interim = "";
@@ -596,63 +790,76 @@
 
     rec.onerror = (ev) => {
       const err = ev?.error || "";
-      // Fatal — stop retrying
+      // Only a permission failure is worth giving up on; everything else gets
+      // another session from onend.
       if (err === "not-allowed" || err === "service-not-allowed") {
-        el.langPill.hidden = false;
-        el.langPill.textContent = "Mic blocked for transcript";
-        stopRecognition();
-        return;
+        recogHalted = err;
+        recogWanted = false;
+        setLangPill("Transcript blocked");
+        state.transcriptNote = "Speech recognition was denied microphone access.";
+      } else if (err === "audio-capture") {
+        setLangPill("Transcript mic busy");
+      } else if (err === "network") {
+        setLangPill("Transcript offline");
       }
-      if (err === "audio-capture") {
-        el.langPill.hidden = false;
-        el.langPill.textContent = "Transcript mic busy";
-        return;
-      }
-      // Soft errors: no-speech / aborted / network — restart below via onend
+      renderLiveTranscript();
     };
 
     rec.onend = () => {
-      state.recognition = null;
-      if (state.recording && !state.paused && state.autoTranscribe) {
-        window.setTimeout(() => {
-          if (state.recording && !state.paused && !state.recognition) {
-            tryStartRec(rec);
-          }
-        }, 120);
+      if (recogInstance === rec) {
+        recogInstance = null;
+        state.recognition = null;
       }
+      scheduleRecognitionRestart();
     };
 
-    function tryStartRec(instance) {
-      try {
-        instance.start();
-        state.recognition = instance;
-        el.langPill.hidden = false;
-        el.langPill.textContent = `${langLabel(state.lang)} ›`;
-      } catch (err) {
-        // InvalidStateError if already started — ignore
-        if (!state.recognition) {
-          el.langPill.hidden = false;
-          el.langPill.textContent = "Transcript starting…";
-        }
-      }
+    recogInstance = rec;
+    state.recognition = rec;
+    try {
+      rec.start();
+    } catch {
+      // InvalidStateError while a previous session is still tearing down.
+      recogInstance = null;
+      state.recognition = null;
+      scheduleRecognitionRestart(600);
     }
+  }
 
-    tryStartRec(rec);
+  function scheduleRecognitionRestart(delay = RECOG_RESTART_MS) {
+    if (!recogWanted || recogHalted || recogRestartTimer) return;
+    recogRestartTimer = window.setTimeout(() => {
+      recogRestartTimer = 0;
+      spawnRecognition();
+    }, delay);
   }
 
   function stopRecognition() {
-    if (state.recognition) {
-      try {
-        state.recognition.onend = null;
-        state.recognition.stop();
-      } catch {
-        /* ignore */
-      }
+    recogWanted = false;
+    if (recogRestartTimer) {
+      window.clearTimeout(recogRestartTimer);
+      recogRestartTimer = 0;
     }
+    if (recogWatchdog) {
+      window.clearInterval(recogWatchdog);
+      recogWatchdog = 0;
+    }
+    const rec = recogInstance;
+    recogInstance = null;
     state.recognition = null;
+    if (!rec) return;
+    rec.onend = null;
+    rec.onerror = null;
+    rec.onstart = null;
+    try {
+      // stop() keeps onresult alive so trailing words still reach the transcript.
+      rec.stop();
+    } catch {
+      /* ignore */
+    }
   }
 
   function renderLiveTranscript() {
+    if (!el.liveTranscript) return;
     const segs = state.transcriptSegments;
     let html = segs
       .map(
@@ -666,7 +873,10 @@
     if (state.transcriptInterim) {
       html += `<div class="speaker-block"><div class="speaker-head"><span class="speaker-dot"></span> Live</div><div>${escapeHtml(state.transcriptInterim)}</div></div>`;
     }
-    if (!html) html = `<p style="color:var(--text-muted)">Listening for speech…</p>`;
+    if (!html) {
+      const note = state.transcriptNote || "Listening for speech…";
+      html = `<p style="color:var(--text-muted)">${escapeHtml(note)}</p>`;
+    }
     el.liveTranscript.innerHTML = html;
     el.liveTranscript.scrollTop = el.liveTranscript.scrollHeight;
   }
@@ -699,6 +909,13 @@
 
   /* —— Recording —— */
   let startingRecording = false;
+  let pendingShellReload = false;
+
+  function applyPendingShellReload() {
+    if (!pendingShellReload || state.recording) return;
+    pendingShellReload = false;
+    location.reload();
+  }
 
   function micErrorMessage(err) {
     const name = err?.name || "";
@@ -831,6 +1048,7 @@
       state.transcriptFinal = "";
       state.transcriptInterim = "";
       state.transcriptSegments = [];
+      state.transcriptNote = "";
       state.elapsedMs = 0;
       state.timerBase = 0;
       state.paused = false;
@@ -989,6 +1207,7 @@
     state.mediaRecorder = null;
     setView("home");
     toast("Discarded");
+    applyPendingShellReload();
   }
 
   function buildSummary(text) {
@@ -1462,11 +1681,27 @@
     else if (state.pinMode === "unlock" && state.pinBuffer.length === state.pin.length) submitPin();
   }
 
+  let blackoutTookFullscreen = false;
+
   function enterBlackout() {
     el.blackout.hidden = false;
     el.blackout.classList.add("show-hint");
     clearTimeout(enterBlackout._t);
     enterBlackout._t = setTimeout(() => el.blackout.classList.remove("show-hint"), 1800);
+    // A lit status bar or browser toolbar defeats the point of a blackout, so
+    // black out the theme colour and claim the whole screen while it is up.
+    setThemeColor("#000000");
+    const root = document.documentElement;
+    if (!document.fullscreenElement && typeof root.requestFullscreen === "function") {
+      root
+        .requestFullscreen({ navigationUI: "hide" })
+        .then(() => {
+          blackoutTookFullscreen = true;
+        })
+        .catch(() => {
+          /* No transient activation or unsupported — overlay still covers the page. */
+        });
+    }
   }
 
   function exitBlackout(force) {
@@ -1475,6 +1710,11 @@
       return;
     }
     el.blackout.hidden = true;
+    applyTheme();
+    if (blackoutTookFullscreen && document.fullscreenElement && typeof document.exitFullscreen === "function") {
+      document.exitFullscreen().catch(() => {});
+    }
+    blackoutTookFullscreen = false;
   }
 
   /* —— Share / delete / rename —— */
@@ -1942,6 +2182,15 @@
     }
   });
 
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) applyPendingShellReload();
+  });
+
+  // The user can leave fullscreen with a system gesture; don't try to exit twice.
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement) blackoutTookFullscreen = false;
+  });
+
   // Prevent accidental navigation away while recording
   window.addEventListener("beforeunload", (e) => {
     if (state.recording) {
@@ -1958,16 +2207,20 @@
   refreshList();
 
   if ("serviceWorker" in navigator) {
+    // A first install also claims this page, and reloading then throws away a
+    // perfectly fresh shell — plus any recording that just started.
+    const hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register("./sw.js").catch(() => {});
     navigator.serviceWorker.addEventListener("message", (event) => {
-      if (event.data?.type === "SW_UPDATED") {
-        // New deploy claimed — reload once to drop any stale shell.
-        const key = "recorder.swReloaded." + (event.data.cache || "");
-        if (!sessionStorage.getItem(key)) {
-          sessionStorage.setItem(key, "1");
-          location.reload();
-        }
+      if (event.data?.type !== "SW_UPDATED" || !hadController) return;
+      const key = "recorder.swReloaded." + (event.data.cache || "");
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+      if (state.recording) {
+        pendingShellReload = true;
+        return;
       }
+      location.reload();
     });
   }
 })();
