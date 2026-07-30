@@ -5,17 +5,17 @@ import {
   isShellRequest,
 } from "./sw-rules.js";
 
-const CACHE = "recorder-__BUILD_HASH__";
+const CACHE = "recorder-05cf94b";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=__BUILD_HASH__",
-  "./db.js?v=__BUILD_HASH__",
-  "./nextcloud.js?v=__BUILD_HASH__",
-  "./offline-transcription.js?v=__BUILD_HASH__",
-  "./rec-lib.js?v=__BUILD_HASH__",
-  "./sw-rules.js?v=__BUILD_HASH__",
-  "./app.js?v=__BUILD_HASH__",
+  "./styles.css?v=05cf94b",
+  "./db.js?v=05cf94b",
+  "./nextcloud.js?v=05cf94b",
+  "./offline-transcription.js?v=05cf94b",
+  "./rec-lib.js?v=05cf94b",
+  "./sw-rules.js?v=05cf94b",
+  "./app.js?v=05cf94b",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

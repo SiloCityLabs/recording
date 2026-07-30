@@ -23,7 +23,7 @@ fi
 echo "Build hash: $SHORT_SHA"
 
 # App shell
-cp index.html styles.css db.js nextcloud.js offline-transcription.js app.js sw.js manifest.webmanifest "$OUT/"
+cp index.html styles.css db.js nextcloud.js offline-transcription.js rec-lib.js sw-rules.js app.js sw.js manifest.webmanifest "$OUT/"
 cp .nojekyll CNAME "$OUT/"
 
 # Stamp commit hash into menus + service worker cache name

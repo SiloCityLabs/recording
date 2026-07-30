@@ -1,7 +1,6 @@
-.DS_Store
-Thumbs.db
-*.log
-_site/
+coverage/
+node_modules/
+
 
 # Optional offline transcription binaries (fetched by scripts/fetch-transcription-assets.sh)
 optional/transcription/vosk.js

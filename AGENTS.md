@@ -63,6 +63,8 @@ click that follows a drag must not open the recording.
 | `styles.css` | Themes, portrait / landscape / wide layouts |
 | `db.js` | IndexedDB recordings store (`RecDB`) |
 | `nextcloud.js` | Optional WebDAV upload / folder create / delete |
+| `rec-lib.js` | Pure helpers (duration, summary, WAV edit, error copy) |
+| `sw-rules.js` | SW path/cache classification helpers |
 | `offline-transcription.js` | Opt-in Vosk model management, PCM conversion, public transcription API |
 | `app.js` | UI, MediaRecorder, waveform, speech, playback, edit, PIN/blackout, wake lock |
 | `sw.js` | Offline cache — shell name stamped with `__BUILD_HASH__`; preserves transcription caches |
@@ -70,6 +72,7 @@ click that follows a drag must not open the recording.
 | `scripts/fetch-transcription-assets.sh` | Optional local CDN mirror for `python3 -m http.server` |
 | `scripts/build-site.sh` | Stamps `__BUILD_HASH__`, writes `_site/` (no model binaries) |
 | `Makefile` | `make build` for Cloudflare Pages |
+| `tests/` | Vitest unit tests + Vosk CDN HEAD checks |
 | `manifest.webmanifest` | PWA manifest (`display: fullscreen` + `display_override`, `orientation: any`) |
 | `CNAME` | `recording.silocitylabs.com` (kept in artifact; DNS is Cloudflare custom domain) |
 | `icons/` | Circular `any` icons + full-bleed `maskable` icons |
@@ -78,7 +81,8 @@ click that follows a drag must not open the recording.
 
 ## Conventions
 
-- **No bundler / npm.** Edit files directly; preview with `python3 -m http.server`.
+- **No bundler / npm for the site.** Edit files directly; preview with `python3 -m http.server`.
+  Maintainer unit tests use a separate `package.json` (`npm test` / `npm run test:coverage`) — never required to ship the PWA.
 - Relative URLs only (`./`) so project Pages + custom domain both work.
 - Keep `user-select: none` on chrome; **transcript / summary / inputs must stay selectable**.
 - PWA icons: `purpose: any` = circular with transparent corners; `purpose: maskable` = opaque full-bleed square.
@@ -197,7 +201,7 @@ The README compares this PWA to Play Store Google Recorder (~121 MB app size; ~4
 python3 - <<'PY'
 import os, io, gzip
 files = []
-for p in ['index.html','styles.css','db.js','nextcloud.js','offline-transcription.js','app.js','sw.js','manifest.webmanifest','.nojekyll','CNAME']:
+for p in ['index.html','styles.css','db.js','nextcloud.js','offline-transcription.js','rec-lib.js','sw-rules.js','app.js','sw.js','manifest.webmanifest','.nojekyll','CNAME']:
     if os.path.exists(p): files.append(p)
 for dp, _, fs in os.walk('icons'):
     for f in fs: files.append(os.path.join(dp, f))

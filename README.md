@@ -4,7 +4,7 @@ Google Recorder–style voice recorder as a standalone static PWA — no app sto
 
 **Live:** https://recording.silocitylabs.com
 
-My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **306 KB** (~158 KB transferred with gzip) — roughly **406× smaller**, fully offline once installed, and no store required.
+My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **308 KB** (~159 KB transferred with gzip) — roughly **402× smaller**, fully offline once installed, and no store required.
 
 Optional **on-device transcription** (Vosk) is available in Settings and downloads from free public CDNs only after you opt in (~40–50 MB). Browser and offline transcription are mutually exclusive. Optional **Nextcloud** backup is planned (same-origin proxy) — disabled for now because browsers block cross-origin WebDAV (CORS).
 
@@ -33,8 +33,8 @@ Optional **on-device transcription** (Vosk) is available in Settings and downloa
 | Google Recorder (Play Store app size) | ~121 MB |
 | Google Recorder app data (no recordings) | ~4.27 MB |
 | Google Recorder cache | ~11.83 MB |
-| This PWA base shell (all shipped shell files) | **~306 KB** (0.299 MB) |
-| Typical base transfer (gzip text + icons) | **~158 KB** |
+| This PWA base shell (all shipped shell files) | **~308 KB** (0.301 MB) |
+| Typical base transfer (gzip text + icons) | **~159 KB** |
 | Optional offline transcription runtime (`vosk.js`, from jsDelivr) | **~5.5 MB** |
 | Optional language model (one of EN/ES/FR/DE, from vosk-browser CDN) | **~33–44 MB** |
 | Optional download total (runtime + one model) | **~40–50 MB** |
@@ -70,6 +70,17 @@ To test offline transcription downloads against a local mirror (optional; produc
 ./scripts/fetch-transcription-assets.sh
 ```
 
+## Tests
+
+Maintainer unit tests (Vitest) — not part of the Pages deploy:
+
+```bash
+npm install
+npm test                 # unit + Vosk CDN HEAD checks (no model download)
+npm run test:coverage    # coverage thresholds on db/nextcloud/offline/rec-lib/sw-rules
+```
+
+Vosk checks only `HEAD` the jsDelivr runtime and vosk-browser model URLs (status, `Content-Length`, CORS).
 ## Nextcloud (deferred)
 
 Cross-origin WebDAV from this PWA is blocked by browser CORS unless Nextcloud (or a proxy) opts in. The sync buttons stay visible but disabled with an explanation. A same-origin proxy can unlock this later without changing Nextcloud CORS.
