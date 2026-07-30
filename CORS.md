@@ -26,6 +26,10 @@ Path used: `/remote.php/dav/files/<user>/<folder>/…`
 
 1. [What you need](#what-you-need)
 2. [Nginx Proxy Manager (tested pattern for TrueNAS)](#nginx-proxy-manager-tested-pattern-for-truenas)
+   - [Custom Locations tab (required)](#custom-locations-tab-required)
+   - [Optional: allowlist origins (stricter)](#optional-allowlist-origins-stricter)
+   - [502 Bad Gateway on `/remote.php/dav/`](#502-bad-gateway-on-remotephpdav)
+   - [Advanced tab (not for locations)](#advanced-tab-not-for-locations)
 3. [Base nginx (TLS terminate → Nextcloud HTTP)](#base-nginx-tls-terminate--nextcloud-http)
 4. [Verify](#verify)
 5. [Security notes](#security-notes)
@@ -45,7 +49,8 @@ Path used: `/remote.php/dav/files/<user>/<folder>/…`
 - CORS headers on **responses for** `/remote.php/dav/` (including **401/403** — use
   `always` / equivalent so auth failures are not masked as CORS errors).
 - An **OPTIONS** preflight response before `PUT` / `MKCOL` / `DELETE`.
-- An allowlisted `Access-Control-Allow-Origin` (never `*` with `Authorization`).
+- A real `Access-Control-Allow-Origin` value (reflect `$http_origin` or an allowlist —
+  never `*` when using `Authorization`).
 
 ---
 
@@ -53,22 +58,60 @@ Path used: `/remote.php/dav/files/<user>/<folder>/…`
 
 Typical layout: NPM terminates TLS → Nextcloud Docker on HTTP (e.g. `10.x.x.x:port`).
 
-NPM’s UI cannot define an `http`-level `map {}`. Put origin allowlisting in the
-**Custom Locations** snippet with `set` / `if`.
+**Important:** Nginx Proxy Manager does **not** let you define `location { }` blocks
+yourself. Use the **Custom Locations** UI row only. Do **not** paste a `location`
+block into the Advanced tab — that fights NPM’s generated config.
 
-### Custom Locations tab
+NPM cannot define an `http`-level `map {}`. The working approach below reflects
+`$http_origin` (no allowlist `if`s). That is enough for the Recorder PWA and local
+preview.
+
+### Custom Locations tab (required)
+
+1. Open the Proxy Host for your Nextcloud domain → **Custom Locations**.
+2. **Add location** (the UI element — not a handwritten `location` block).
 
 | Field | Value |
 |---|---|
 | Define location | `/remote.php/dav/` |
-| Scheme | `http` |
-| Forward Hostname / IP | your Nextcloud host / container IP |
-| Forward Port | your Nextcloud port |
+| Scheme | **same as Details tab** (usually `http`) |
+| Forward Hostname / IP | **exactly the same** as Details → Forward Hostname / IP |
+| Forward Port | **exactly the same** as Details → Forward Port |
 
-**Custom Nginx Configuration** (paste into the textarea):
+A Custom Location is a **separate** upstream. A typo in host **or port** (e.g.
+Details `30027` but location `30037`) produces **502** / `connect() failed (111:
+Connection refused)` on DAV only, while the rest of Nextcloud still works.
+
+**Custom Nginx Configuration** (paste into that location row’s textarea only).
+Verified working on Nginx Proxy Manager 2.15.x / TrueNAS:
 
 ```nginx
-# Allowlist PWA origins (no map{} — NPM UI can't define those)
+if ($request_method = OPTIONS) {
+    add_header Access-Control-Allow-Origin $http_origin always;
+    add_header Access-Control-Allow-Methods "PUT, DELETE, MKCOL, PROPFIND, HEAD, GET, OPTIONS" always;
+    add_header Access-Control-Allow-Headers "Authorization, Content-Type, Depth, Destination, Overwrite" always;
+    add_header Access-Control-Max-Age 86400 always;
+    add_header Vary Origin always;
+    add_header Content-Length 0 always;
+    return 204;
+}
+
+add_header Access-Control-Allow-Origin $http_origin always;
+add_header Access-Control-Expose-Headers "ETag, Oc-Fileid" always;
+add_header Vary Origin always;
+```
+
+Do **not** add `proxy_pass`, `proxy_set_header`, or another `location` here — NPM
+already wires forwarding from the Scheme / Host / Port fields on that row.
+
+Do **not** use `Access-Control-Allow-Origin *` — the PWA sends `Authorization`, and
+browsers reject `*` for that. Reflecting `$http_origin` is the correct pattern.
+
+### Optional: allowlist origins (stricter)
+
+Same Custom Location row; only echo known PWA origins:
+
+```nginx
 set $recorder_cors_origin "";
 if ($http_origin = "https://recording.silocitylabs.com") {
     set $recorder_cors_origin $http_origin;
@@ -95,32 +138,38 @@ add_header Access-Control-Expose-Headers "ETag, Oc-Fileid" always;
 add_header Vary                          Origin always;
 ```
 
-Do **not** add `proxy_pass` here — NPM already forwards from Scheme / Host / Port.
+### 502 Bad Gateway on `/remote.php/dav/`
 
-### Optional: production-only (simpler)
+A **502** (including when you open the DAV URL in a browser) means NPM could not
+reach the upstream for that Custom Location. It is **not** a CORS failure (CORS
+shows up in the browser console, not as 502).
 
-```nginx
-if ($request_method = OPTIONS) {
-    add_header Access-Control-Allow-Origin  "https://recording.silocitylabs.com" always;
-    add_header Access-Control-Allow-Methods "PUT, DELETE, MKCOL, PROPFIND, HEAD, GET, OPTIONS" always;
-    add_header Access-Control-Allow-Headers "Authorization, Content-Type, Depth, Destination, Overwrite" always;
-    add_header Access-Control-Max-Age       86400 always;
-    add_header Vary                         Origin always;
-    add_header Content-Length               0 always;
-    return 204;
-}
+In the NPM container, check:
 
-add_header Access-Control-Allow-Origin   "https://recording.silocitylabs.com" always;
-add_header Access-Control-Expose-Headers "ETag, Oc-Fileid" always;
-add_header Vary                          Origin always;
+```bash
+grep -n "server_name\|remote.php/dav\|proxy_pass\|set \$port" /data/nginx/proxy_host/*.conf
+tail -n 50 /data/logs/proxy-host-<ID>_error.log
 ```
 
-### Advanced tab
+Look for `connect() failed (111: Connection refused)` and compare the upstream
+port in that line to Details → Forward Port.
 
-Leave empty for CORS unless you already use it for upload size / buffering.
-Do **not** put a `map { }` block in Advanced — wrong nginx context.
+1. Note **Details** tab: Forward Hostname / IP + Port (what already works for the
+   Nextcloud UI).
+2. Open **Custom Locations** → `/remote.php/dav/` row.
+3. Set Scheme / Hostname / Port to **those exact same values** (watch for typos).
+   Save.
+4. Isolate CORS vs upstream: clear the Custom Nginx Configuration textarea, Save,
+   retest the DAV URL.
+   - Still **502** → fix forward host/port (or delete the location row; DAV should
+     fall back to the main proxy host).
+   - **401 / XML / redirect / 207** with empty textarea → upstream is fine; paste
+     the CORS snippet back in.
+5. Never add `location { ... }` or `proxy_pass` in Advanced / the textarea.
 
-Keep large-upload settings on the main proxy host if you need them, for example:
+### Advanced tab (not for locations)
+
+Use Advanced only for **server-wide** tweaks (upload size / buffering), e.g.:
 
 ```nginx
 client_max_body_size 10G;
@@ -129,6 +178,9 @@ proxy_buffering off;
 proxy_read_timeout 3600s;
 proxy_send_timeout 3600s;
 ```
+
+Do **not** put `map { }`, `location { }`, or CORS `if` blocks here. Wrong context /
+duplicates NPM’s Custom Locations.
 
 Save the proxy host and [verify](#verify).
 
@@ -231,11 +283,12 @@ DevTools → Network should show `OPTIONS` then `MKCOL`/`PUT` with CORS allow he
 
 ## Security notes
 
-- Allowlist **exact** PWA origins — never `Access-Control-Allow-Origin: *` with Basic auth.
+- Never use `Access-Control-Allow-Origin: *` with Basic auth / `Authorization`.
+- Reflecting `$http_origin` (the verified NPM snippet) lets **any** site’s JS call
+  your DAV API **if the user has entered credentials in that page**. Prefer the
+  [optional allowlist](#optional-allowlist-origins-stricter) on a shared / public
+  Nextcloud if you want to lock ACAO to the Recorder PWA (+ localhost).
 - CORS does not replace authentication; use a Nextcloud **app password**.
-- Allowing `https://recording.silocitylabs.com` means that site’s JS may call your
-  DAV API **with credentials the user entered in the PWA**. Do not broaden the
-  origin list to arbitrary sites.
 - Prefer firewall / fail2ban / Nextcloud brute-force protections as for any public cloud.
 
 ---

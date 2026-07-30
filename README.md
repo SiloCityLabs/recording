@@ -84,7 +84,7 @@ Vosk checks only `HEAD` the jsDelivr runtime and vosk-browser model URLs (status
 
 ## Nextcloud sync
 
-Upload / delete via WebDAV (`nextcloud.js`) from the browser. Credentials stay in `localStorage` (app password). Browsers require CORS on **your** Nextcloud or reverse proxy for `https://recording.silocitylabs.com` (and localhost when previewing).
+Upload via WebDAV (`nextcloud.js`) from the browser. Credentials stay in `localStorage` (app password). Browsers require CORS on **your** Nextcloud or reverse proxy for `https://recording.silocitylabs.com` (and localhost when previewing). List cards show a solid cloud when `synced`; deleting a recording locally does **not** remove the Nextcloud copy.
 
 See **[CORS.md](CORS.md)** for:
 

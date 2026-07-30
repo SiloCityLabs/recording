@@ -327,6 +327,7 @@ import {
   }
 
   const CLOUD_OFF_SVG = `<svg class="rec-card-cloud" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.27 2 2 3.27l2.72 2.72A6.5 6.5 0 0 0 6 19h11.73l3 3L22 20.73 3.27 2zM6 17a4.5 4.5 0 0 1-.33-8.99l9.99 9.99H6zm13.35-6.96A7.49 7.49 0 0 0 12 4c-1.48 0-2.85.44-4.01 1.17l1.46 1.46A5.4 5.4 0 0 1 12 6a5.5 5.5 0 0 1 5.5 5.5v.5H19a3 3 0 0 1 2.07 5.17l1.42 1.42A5 5 0 0 0 19.35 10.04z"/></svg>`;
+  const CLOUD_ON_SVG = `<svg class="rec-card-cloud is-synced" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>`;
 
   const TRASH_SVG = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M15 4V3H9v1H4v2h1v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6h1V4h-5zm2 15H7V6h10v13zM9 8h2v9H9V8zm4 0h2v9h-2V8z"/></svg>`;
 
@@ -352,9 +353,11 @@ import {
         month: "short",
         day: "numeric",
       });
+      const cloudSvg = rec.synced ? CLOUD_ON_SVG : CLOUD_OFF_SVG;
+      const cloudLabel = rec.synced ? "Backed up to Nextcloud" : "Not backed up";
       btn.innerHTML = `
         <div class="rec-card-head">
-          ${CLOUD_OFF_SVG}
+          <span class="rec-card-cloud-wrap" title="${cloudLabel}" aria-label="${cloudLabel}">${cloudSvg}</span>
           <span class="rec-card-title">${title}</span>
           ${rec.favorite ? `<span class="rec-card-star" aria-label="Favorite">★</span>` : ""}
           <span class="rec-card-play" aria-hidden="true">
@@ -1949,14 +1952,7 @@ import {
 
   async function deleteCurrent() {
     if (!confirm("Delete this recording?")) return;
-    const rec = await RecDB.get(state.currentId);
-    if (rec?.synced && state.nc.enabled && rec.syncName) {
-      try {
-        await Nextcloud.remove(state.nc, rec.syncName);
-      } catch {
-        /* local delete still proceeds */
-      }
-    }
+    // Local-only delete: keep Nextcloud copies so users can free phone storage.
     await RecDB.remove(state.currentId);
     stopAudio();
     el.detailMenu.hidden = true;

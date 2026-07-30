@@ -41,7 +41,8 @@ Reference screenshots (kept for design, not shipped): `images/screenshots/`.
 Match `images/screenshots/tablet-landscape-home-recording.png`. Three stacked rows, **not** a
 left/right split:
 
-1. Cloud-off icon + title (`Jul 29 at 8:54 AM`) with a bare coral play triangle pushed right
+1. Cloud icon + title (`Jul 29 at 8:54 AM`) with a bare coral play triangle pushed right —
+   cloud-**off** when not backed up; solid cloud (wave accent) when `synced` to Nextcloud
 2. Weekday date left, duration right, both muted
 3. Full-width progress track
 
@@ -53,7 +54,8 @@ Swiping a card **left or right** slides it off a `--danger-container` panel that
 at both ends, so whichever side is revealed shows one — see
 `images/screenshots/phone-home-swipe-delete.png`. Past ~40% of the card width it deletes and offers
 **Undo** in the toast; a shorter drag snaps back. Vertical drags must still scroll the list, and the
-click that follows a drag must not open the recording.
+click that follows a drag must not open the recording. Local delete (swipe or detail) removes only
+the IndexedDB copy — Nextcloud backups stay so users can free phone storage.
 
 ## Source map
 
