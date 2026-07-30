@@ -6,7 +6,7 @@ Google Recorder–style voice recorder as a standalone static PWA — no app sto
 
 My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **308 KB** (~159 KB transferred with gzip) — roughly **402× smaller**, fully offline once installed, and no store required.
 
-Optional **on-device transcription** (Vosk) is available in Settings and downloads from free public CDNs only after you opt in (~40–50 MB). Browser and offline transcription are mutually exclusive. Optional **Nextcloud** backup is planned (same-origin proxy) — disabled for now because browsers block cross-origin WebDAV (CORS).
+Optional **on-device transcription** (Vosk) is available in Settings and downloads from free public CDNs only after you opt in (~40–50 MB). Browser and offline transcription are mutually exclusive. Optional **Nextcloud** backup uses WebDAV from your browser — your Nextcloud (or reverse proxy) must allow CORS for this PWA; see [CORS.md](CORS.md).
 
 ## Features
 
@@ -20,7 +20,7 @@ Optional **on-device transcription** (Vosk) is available in Settings and downloa
 - Search titles & transcripts
 - Favorites, rename, share / download, delete
 - Swipe a list card either way to delete, with an Undo snackbar
-- Nextcloud backup UI present but disabled until a same-origin proxy lands
+- Optional Nextcloud backup via WebDAV (requires CORS on your Nextcloud / reverse proxy — [CORS.md](CORS.md))
 - Screen wake lock while recording (Wake Lock API)
 - Screen blackout + optional PIN unlock (browsers can’t record in the background) — fully dark, no status bar or toolbar glow
 - Installable offline PWA
@@ -81,9 +81,18 @@ npm run test:coverage    # coverage thresholds on db/nextcloud/offline/rec-lib/s
 ```
 
 Vosk checks only `HEAD` the jsDelivr runtime and vosk-browser model URLs (status, `Content-Length`, CORS).
-## Nextcloud (deferred)
 
-Cross-origin WebDAV from this PWA is blocked by browser CORS unless Nextcloud (or a proxy) opts in. The sync buttons stay visible but disabled with an explanation. A same-origin proxy can unlock this later without changing Nextcloud CORS.
+## Nextcloud sync
+
+Upload / delete via WebDAV (`nextcloud.js`) from the browser. Credentials stay in `localStorage` (app password). Browsers require CORS on **your** Nextcloud or reverse proxy for `https://recording.silocitylabs.com` (and localhost when previewing).
+
+See **[CORS.md](CORS.md)** for:
+
+- Nginx Proxy Manager (TrueNAS-style UI)
+- Base nginx (`map` + `/remote.php/dav/`)
+- Untested sketches: Apache, Caddy, Traefik, HAProxy
+
+This project does **not** run a Cloudflare Worker as a public open proxy for arbitrary Nextcloud hosts.
 
 ## Limits vs stock Google Recorder
 

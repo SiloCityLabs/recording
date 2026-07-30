@@ -20,7 +20,7 @@ A **standalone static PWA** that approximates the Google Recorder experience —
 - Stay tiny (target: well under 500 KB shipped **base shell**).
 - Work offline after install (service worker) for local recordings.
 - Optional on-device transcription (opt-in download; never in shell precache).
-- Optional Nextcloud sync later (currently disabled UI — CORS); same-origin proxy planned.
+- Optional Nextcloud sync via WebDAV — requires CORS on the user’s Nextcloud / reverse proxy ([CORS.md](CORS.md)); no Cloudflare open proxy.
 - Deploy from `main` via Cloudflare Pages (`make build` → `_site`; no bundler/npm).
 
 ## Layout (match stock)
@@ -63,6 +63,7 @@ click that follows a drag must not open the recording.
 | `styles.css` | Themes, portrait / landscape / wide layouts |
 | `db.js` | IndexedDB recordings store (`RecDB`) |
 | `nextcloud.js` | Optional WebDAV upload / folder create / delete |
+| `CORS.md` | How to enable Nextcloud CORS (NPM, nginx, untested proxies) |
 | `rec-lib.js` | Pure helpers (duration, summary, WAV edit, error copy) |
 | `sw-rules.js` | SW path/cache classification helpers |
 | `offline-transcription.js` | Opt-in Vosk model management, PCM conversion, public transcription API |

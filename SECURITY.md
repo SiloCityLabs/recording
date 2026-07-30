@@ -12,4 +12,5 @@ Please open a private security advisory on this repository, or email the SiloCit
 
 - Microphone and speech recognition stay on-device / in the browser.
 - Nextcloud credentials (app passwords) are stored only in the user’s browser `localStorage`.
+- Nextcloud sync requires the user to enable CORS on their own server ([CORS.md](CORS.md)); this project does not proxy arbitrary Nextcloud hosts.
 - Do not commit secrets, app passwords, or private recordings into this repository.
