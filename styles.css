@@ -1091,9 +1091,36 @@ button {
   color: var(--text-muted);
 }
 .storage-clear-btn {
-  width: 100%;
-  margin-top: 12px;
+  display: flex;
+  align-items: center;
   justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 16px 0 0;
+  min-height: 40px;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 55%, transparent);
+  background: var(--bg-search);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.08s ease, border-color 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.sheet .storage-clear-btn {
+  margin: 16px 0 0;
+}
+.storage-clear-btn:hover {
+  border-color: var(--text-muted);
+}
+.storage-clear-btn:active {
+  transform: scale(0.98);
+  background: color-mix(in srgb, var(--text-muted) 22%, var(--bg-search));
+  border-color: var(--text);
 }
 .sheet-list {
   display: flex;

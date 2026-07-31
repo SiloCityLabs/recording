@@ -532,14 +532,18 @@ import {
     if (el.ncStatus) el.ncStatus.textContent = on ? "On" : "Off — requires CORS on your server";
   }
 
-  // Cache Storage holds the tar.gz; vosk-browser also unpacks into IndexedDB.
-  // Attribute ~2× so the model row better matches origin usage.
-  const MODEL_STORAGE_FACTOR = 2;
-
   function currentShellCacheName() {
     const text = document.getElementById("buildHash")?.textContent || "";
     const m = text.match(/Build\s+(\S+)/i);
     return shellCacheName(m?.[1] || "dev");
+  }
+
+  // Download is ~1×; vosk-browser also unpacks into IndexedDB (~2× on disk).
+  // Use this only for download/confirm estimates — not measured usage rows.
+  const DOWNLOAD_DISK_FACTOR = 2;
+
+  function downloadDiskEstimateBytes(downloadBytes) {
+    return Math.max(0, Number(downloadBytes) || 0) * DOWNLOAD_DISK_FACTOR;
   }
 
   async function measureCacheBreakdown() {
@@ -590,11 +594,6 @@ import {
     return total;
   }
 
-  function modelAttributedBytes(cacheParts) {
-    if (!(cacheParts.modelBytes > 0)) return 0;
-    return cacheParts.modelBytes * MODEL_STORAGE_FACTOR;
-  }
-
   async function updateStorageCard() {
     const est = await RecDB.storageEstimate();
     const usage = est.usage || 0;
@@ -617,14 +616,14 @@ import {
       const modelName = cacheParts.modelLabel
         ? `Offline model (${cacheParts.modelLabel})`
         : "Offline model";
-      const modelAttr = modelAttributedBytes(cacheParts);
+      const modelBytes = cacheParts.modelBytes > 0 ? cacheParts.modelBytes : 0;
       const modelValue =
-        modelAttr > 0
-          ? `~${formatBytes(modelAttr)}`
+        modelBytes > 0
+          ? formatBytes(modelBytes)
           : cacheParts.modelInstalled
             ? "Installed"
             : "Not downloaded";
-      const attributed = recBytes + cacheParts.appBytes + modelAttr;
+      const attributed = recBytes + cacheParts.appBytes + modelBytes;
       const otherBytes = Math.max(0, usage - attributed);
       el.storageRows.innerHTML = `
         <div class="storage-row"><span>Recordings</span><span>${state.recordings.length} · ${formatBytes(recBytes)}</span></div>
@@ -2303,7 +2302,7 @@ import {
       btn.setAttribute("role", "option");
       btn.setAttribute("aria-selected", lang.id === state.lang ? "true" : "false");
       const downloadBytes = api ? api.approximateDownloadBytes(lang.id) : 0;
-      const sizeLabel = api ? api.formatBytes(downloadBytes) : "";
+      const sizeLabel = api ? api.formatBytes(downloadDiskEstimateBytes(downloadBytes)) : "";
       btn.innerHTML = `
         <span class="lang-option-label">${escapeHtml(lang.label)}</span>
         <span class="lang-option-meta">${escapeHtml(sizeLabel ? `Offline ~${sizeLabel}` : "")}</span>`;
@@ -2339,9 +2338,9 @@ import {
       const nextModel = api.langEntry(nextId).modelId;
       if (installed && installed.modelId !== nextModel) {
         const oldSize = api.formatBytes(installed.bytes || api.approximateDownloadBytes(installed.lang));
-        const newSize = api.formatBytes(api.approximateDownloadBytes(nextId));
+        const newSize = api.formatBytes(downloadDiskEstimateBytes(api.approximateDownloadBytes(nextId)));
         const ok = confirm(
-          `Switching to ${nextLabel} will replace the offline ${installed.label} model (~${oldSize} stored) with a ${nextLabel} model (about ${newSize} download). Continue?`
+          `Switching to ${nextLabel} will replace the offline ${installed.label} model (~${oldSize} stored) with a ${nextLabel} model (about ${newSize} on disk). Continue?`
         );
         if (!ok) return;
         try {
@@ -2408,7 +2407,7 @@ import {
     const api = offlineApi();
     if (!api || !el.offlineTranscribeSub) return;
     const status = await api.getStatus(state.lang);
-    const sizeLabel = api.formatBytes(status.downloadBytes);
+    const sizeLabel = api.formatBytes(downloadDiskEstimateBytes(status.downloadBytes));
     const storedLabel = api.formatBytes(status.storedBytes);
     const langName = status.langLabel || langLabel(state.lang);
 
@@ -2429,8 +2428,8 @@ import {
       el.offlineTranscribeBtn.textContent = "Delete offline model";
       el.offlineTranscribeBtn.classList.add("danger-text");
       el.offlineTranscribeSub.textContent = status.enabled
-        ? `${status.modelLabel} · ~${storedLabel || sizeLabel} stored. Transcripts run on-device after each recording (browser live transcription is off).`
-        : `${status.modelLabel} is installed (~${storedLabel || sizeLabel}) but off. Enable to use on-device transcription instead of the browser.`;
+        ? `${status.modelLabel} · ${storedLabel || sizeLabel} stored. Transcripts run on-device after each recording (browser live transcription is off).`
+        : `${status.modelLabel} is installed (${storedLabel || sizeLabel}) but off. Enable to use on-device transcription instead of the browser.`;
       return;
     }
 
@@ -2440,7 +2439,7 @@ import {
       el.offlineTranscribeBtn.textContent = "Download and enable";
       el.offlineTranscribeBtn.classList.remove("danger-text");
       const oldSize = api.formatBytes(status.installedInfo.bytes || 0);
-      el.offlineTranscribeSub.textContent = `Current language is ${langName} (~${sizeLabel}). An offline ${status.installedInfo.label} model (~${oldSize || "—"}) is still stored — change language back or download ${langName} to replace it.`;
+      el.offlineTranscribeSub.textContent = `Current language is ${langName} (~${sizeLabel} on disk). An offline ${status.installedInfo.label} model (${oldSize || "—"}) is still stored — change language back or download ${langName} to replace it.`;
       return;
     }
 
@@ -2448,7 +2447,7 @@ import {
     el.offlineTranscribeBtn.hidden = false;
     el.offlineTranscribeBtn.textContent = "Download and enable";
     el.offlineTranscribeBtn.classList.remove("danger-text");
-    el.offlineTranscribeSub.textContent = `Transcribe privately on this device after recording (instead of browser live transcription). ${langName} model — one-time download of approximately ${sizeLabel}.`;
+    el.offlineTranscribeSub.textContent = `Transcribe privately on this device after recording (instead of browser live transcription). ${langName} model — about ${sizeLabel} on disk after install (download + unpack).`;
   }
 
   el.offlineTranscribeToggle?.addEventListener("change", () => {
@@ -2490,7 +2489,7 @@ import {
     // Replacing a different-language install: clear first so download starts clean.
     if (status.installedInfo && status.conflicts) {
       const ok = confirm(
-        `Download ${status.langLabel} (~${api.formatBytes(status.downloadBytes)}) and replace the stored ${status.installedInfo.label} model?`
+        `Download ${status.langLabel} (~${api.formatBytes(downloadDiskEstimateBytes(status.downloadBytes))} on disk) and replace the stored ${status.installedInfo.label} model?`
       );
       if (!ok) return;
     }
