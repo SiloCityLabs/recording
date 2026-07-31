@@ -1,6 +1,7 @@
 import { RecDB } from "./db.js";
 import { Nextcloud } from "./nextcloud.js";
 import { OfflineTranscription } from "./offline-transcription.js";
+import { isObsoleteShellCache, shellCacheName } from "./sw-rules.js";
 import {
   formatDuration,
   escapeHtml,
@@ -71,7 +72,10 @@ import {
     storageLabel: document.getElementById("storageLabel"),
     storageTotal: document.getElementById("storageTotal"),
     storageRows: document.getElementById("storageRows"),
+    storageDetail: document.getElementById("storageDetail"),
+    storageCard: document.getElementById("storageCard"),
     storageToggle: document.getElementById("storageToggle"),
+    clearCacheBtn: document.getElementById("clearCacheBtn"),
     detailVizCard: document.getElementById("detailVizCard"),
     syncNowBtn: document.getElementById("syncNowBtn"),
     openSettingsBtn: document.getElementById("openSettingsBtn"),
@@ -528,6 +532,16 @@ import {
     if (el.ncStatus) el.ncStatus.textContent = on ? "On" : "Off — requires CORS on your server";
   }
 
+  // Cache Storage holds the tar.gz; vosk-browser also unpacks into IndexedDB.
+  // Attribute ~2× so the model row better matches origin usage.
+  const MODEL_STORAGE_FACTOR = 2;
+
+  function currentShellCacheName() {
+    const text = document.getElementById("buildHash")?.textContent || "";
+    const m = text.match(/Build\s+(\S+)/i);
+    return shellCacheName(m?.[1] || "dev");
+  }
+
   async function measureCacheBreakdown() {
     const out = { appBytes: 0, modelBytes: 0, modelLabel: "", modelInstalled: false };
     if (!("caches" in window)) return out;
@@ -576,6 +590,11 @@ import {
     return total;
   }
 
+  function modelAttributedBytes(cacheParts) {
+    if (!(cacheParts.modelBytes > 0)) return 0;
+    return cacheParts.modelBytes * MODEL_STORAGE_FACTOR;
+  }
+
   async function updateStorageCard() {
     const est = await RecDB.storageEstimate();
     const usage = est.usage || 0;
@@ -598,16 +617,20 @@ import {
       const modelName = cacheParts.modelLabel
         ? `Offline model (${cacheParts.modelLabel})`
         : "Offline model";
+      const modelAttr = modelAttributedBytes(cacheParts);
       const modelValue =
-        cacheParts.modelBytes > 0
-          ? formatBytes(cacheParts.modelBytes)
+        modelAttr > 0
+          ? `~${formatBytes(modelAttr)}`
           : cacheParts.modelInstalled
             ? "Installed"
             : "Not downloaded";
+      const attributed = recBytes + cacheParts.appBytes + modelAttr;
+      const otherBytes = Math.max(0, usage - attributed);
       el.storageRows.innerHTML = `
         <div class="storage-row"><span>Recordings</span><span>${state.recordings.length} · ${formatBytes(recBytes)}</span></div>
         <div class="storage-row"><span>App cache</span><span>${formatBytes(cacheParts.appBytes)}</span></div>
         <div class="storage-row"><span>${escapeHtml(modelName)}</span><span>${escapeHtml(modelValue)}</span></div>
+        <div class="storage-row"><span>Other</span><span>${formatBytes(otherBytes)}</span></div>
         <div class="storage-row"><span>Browser total</span><span>${totalLabel}</span></div>`;
     }
     if (state.nc.username) {
@@ -616,6 +639,25 @@ import {
       if (el.sheetAvatar) el.sheetAvatar.textContent = letter;
       if (el.sheetHello) el.sheetHello.textContent = `Hi, ${state.nc.username}`;
     }
+  }
+
+  async function clearObsoleteAppCaches() {
+    if (!("caches" in window)) {
+      toast("Cache API not available");
+      return;
+    }
+    const keep = currentShellCacheName();
+    const keys = await caches.keys();
+    const doomed = keys.filter((k) => isObsoleteShellCache(k, keep));
+    await Promise.all(doomed.map((k) => caches.delete(k)));
+    const ctrl = navigator.serviceWorker?.controller;
+    if (ctrl) ctrl.postMessage({ type: "CLEAR_OBSOLETE_CACHES" });
+    await updateStorageCard();
+    toast(
+      doomed.length
+        ? `Cleared ${doomed.length} old app cache${doomed.length === 1 ? "" : "s"}`
+        : "App cache already clean"
+    );
   }
 
   /* —— Wake lock —— */
@@ -2085,8 +2127,14 @@ import {
     el.storageToggle.addEventListener("click", () => {
       const next = el.storageToggle.getAttribute("aria-expanded") !== "true";
       el.storageToggle.setAttribute("aria-expanded", next ? "true" : "false");
-      el.storageToggle.classList.toggle("expanded", next);
-      if (el.storageRows) el.storageRows.hidden = !next;
+      el.storageCard?.classList.toggle("expanded", next);
+      if (el.storageDetail) el.storageDetail.hidden = !next;
+      if (next) updateStorageCard();
+    });
+  }
+  if (el.clearCacheBtn) {
+    el.clearCacheBtn.addEventListener("click", () => {
+      clearObsoleteAppCaches().catch(() => toast("Could not clear cache"));
     });
   }
 
