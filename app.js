@@ -2622,7 +2622,34 @@ import {
     // A first install also claims this page, and reloading then throws away a
     // perfectly fresh shell — plus any recording that just started.
     const hadController = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.register("./sw.js", { type: "module" }).catch(() => {});
+
+    function askSwToPruneCaches() {
+      const ctrl = navigator.serviceWorker.controller;
+      if (ctrl) ctrl.postMessage({ type: "CLEAR_OBSOLETE_CACHES" });
+    }
+
+    navigator.serviceWorker
+      .register("./sw.js", { type: "module" })
+      .then((reg) => {
+        // Pick up new deploys without waiting for the browser's 24h check.
+        const poke = () => {
+          try {
+            reg.update();
+          } catch {
+            /* ignore */
+          }
+        };
+        poke();
+        document.addEventListener("visibilitychange", () => {
+          if (!document.hidden) {
+            poke();
+            askSwToPruneCaches();
+          }
+        });
+        askSwToPruneCaches();
+      })
+      .catch(() => {});
+
     navigator.serviceWorker.addEventListener("message", (event) => {
       if (event.data?.type !== "SW_UPDATED" || !hadController) return;
       const key = "recorder.swReloaded." + (event.data.cache || "");

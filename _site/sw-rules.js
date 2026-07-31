@@ -6,6 +6,14 @@ export function isProtectedOptionalCache(name) {
   return String(name || "").startsWith(TRANSCRIPTION_CACHE_PREFIX);
 }
 
+/** Shell caches to drop on activate (keep current shell + optional transcription). */
+export function isObsoleteShellCache(name, currentShellCache) {
+  const key = String(name || "");
+  if (!key || key === currentShellCache) return false;
+  if (isProtectedOptionalCache(key)) return false;
+  return true;
+}
+
 export function isOptionalTranscriptionPath(url) {
   try {
     const u = typeof url === "string" ? new URL(url, "https://example.invalid") : url;

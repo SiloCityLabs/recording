@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isProtectedOptionalCache,
+  isObsoleteShellCache,
   isOptionalTranscriptionPath,
   isShellRequest,
   shellCacheName,
@@ -13,6 +14,14 @@ describe("sw-rules", () => {
     expect(isProtectedOptionalCache("recorder-transcription-v1")).toBe(true);
     expect(isProtectedOptionalCache("recorder-abc1234")).toBe(false);
     expect(TRANSCRIPTION_CACHE_PREFIX).toBe("recorder-transcription-");
+  });
+
+  it("marks obsolete shell caches for deletion", () => {
+    const current = "recorder-abc1234";
+    expect(isObsoleteShellCache("recorder-old9999", current)).toBe(true);
+    expect(isObsoleteShellCache(current, current)).toBe(false);
+    expect(isObsoleteShellCache("recorder-transcription-v2", current)).toBe(false);
+    expect(isObsoleteShellCache("something-else", current)).toBe(true);
   });
 
   it("detects optional transcription paths", () => {

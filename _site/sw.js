@@ -1,21 +1,22 @@
 import {
   TRANSCRIPTION_CACHE_PREFIX,
   isProtectedOptionalCache,
+  isObsoleteShellCache,
   isOptionalTranscriptionPath,
   isShellRequest,
 } from "./sw-rules.js";
 
-const CACHE = "recorder-05cf94b";
+const CACHE = "recorder-cb39890";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=05cf94b",
-  "./db.js?v=05cf94b",
-  "./nextcloud.js?v=05cf94b",
-  "./offline-transcription.js?v=05cf94b",
-  "./rec-lib.js?v=05cf94b",
-  "./sw-rules.js?v=05cf94b",
-  "./app.js?v=05cf94b",
+  "./styles.css?v=cb39890",
+  "./db.js?v=cb39890",
+  "./nextcloud.js?v=cb39890",
+  "./offline-transcription.js?v=cb39890",
+  "./rec-lib.js?v=cb39890",
+  "./sw-rules.js?v=cb39890",
+  "./app.js?v=cb39890",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -28,27 +29,33 @@ const ASSETS = [
 
 // Re-export prefix for any tooling that introspects the SW scope.
 void TRANSCRIPTION_CACHE_PREFIX;
+void isProtectedOptionalCache;
+
+async function deleteObsoleteCaches() {
+  const keys = await caches.keys();
+  await Promise.all(keys.filter((k) => isObsoleteShellCache(k, CACHE)).map((k) => caches.delete(k)));
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(CACHE)
-      .then((cache) => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
+    (async () => {
+      const cache = await caches.open(CACHE);
+      try {
+        await cache.addAll(ASSETS);
+      } catch (err) {
+        // A failed install must not leave an empty/partial shell cache behind —
+        // those orphans otherwise stack up across deploys.
+        await caches.delete(CACHE);
+        throw err;
+      }
+      await self.skipWaiting();
+    })()
   );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((k) => k !== CACHE && !isProtectedOptionalCache(k))
-            .map((k) => caches.delete(k))
-        )
-      )
+    deleteObsoleteCaches()
       .then(() => self.clients.claim())
       .then(() =>
         self.clients.matchAll({ type: "window" }).then((clients) => {
@@ -56,6 +63,14 @@ self.addEventListener("activate", (event) => {
         })
       )
   );
+});
+
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data || typeof data !== "object") return;
+  if (data.type === "CLEAR_OBSOLETE_CACHES") {
+    event.waitUntil(deleteObsoleteCaches());
+  }
 });
 
 self.addEventListener("fetch", (event) => {

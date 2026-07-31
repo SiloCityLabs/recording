@@ -257,6 +257,15 @@ button {
   color: var(--text);
   flex-shrink: 0;
 }
+.rec-card-cloud-wrap {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.rec-card-cloud.is-synced {
+  color: var(--wave);
+}
 .rec-card-title {
   flex: 1;
   min-width: 0;
@@ -1182,6 +1191,12 @@ button {
   color: var(--text-muted);
   margin: 0 0 16px;
   font-size: 0.9rem;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.modal-sub a {
+  color: var(--wave);
+  text-decoration: underline;
 }
 .field {
   display: flex;

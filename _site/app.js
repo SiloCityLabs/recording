@@ -327,6 +327,7 @@ import {
   }
 
   const CLOUD_OFF_SVG = `<svg class="rec-card-cloud" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.27 2 2 3.27l2.72 2.72A6.5 6.5 0 0 0 6 19h11.73l3 3L22 20.73 3.27 2zM6 17a4.5 4.5 0 0 1-.33-8.99l9.99 9.99H6zm13.35-6.96A7.49 7.49 0 0 0 12 4c-1.48 0-2.85.44-4.01 1.17l1.46 1.46A5.4 5.4 0 0 1 12 6a5.5 5.5 0 0 1 5.5 5.5v.5H19a3 3 0 0 1 2.07 5.17l1.42 1.42A5 5 0 0 0 19.35 10.04z"/></svg>`;
+  const CLOUD_ON_SVG = `<svg class="rec-card-cloud is-synced" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>`;
 
   const TRASH_SVG = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M15 4V3H9v1H4v2h1v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6h1V4h-5zm2 15H7V6h10v13zM9 8h2v9H9V8zm4 0h2v9h-2V8z"/></svg>`;
 
@@ -352,9 +353,11 @@ import {
         month: "short",
         day: "numeric",
       });
+      const cloudSvg = rec.synced ? CLOUD_ON_SVG : CLOUD_OFF_SVG;
+      const cloudLabel = rec.synced ? "Backed up to Nextcloud" : "Not backed up";
       btn.innerHTML = `
         <div class="rec-card-head">
-          ${CLOUD_OFF_SVG}
+          <span class="rec-card-cloud-wrap" title="${cloudLabel}" aria-label="${cloudLabel}">${cloudSvg}</span>
           <span class="rec-card-title">${title}</span>
           ${rec.favorite ? `<span class="rec-card-star" aria-label="Favorite">★</span>` : ""}
           <span class="rec-card-play" aria-hidden="true">
@@ -505,26 +508,28 @@ import {
     });
   }
 
-  const NEXTCLOUD_UNAVAILABLE =
-    "Nextcloud sync is disabled for now — browsers block cross-origin WebDAV (CORS). Coming later via a same-origin proxy.";
-
-  function showNcUnavailable() {
-    toast(NEXTCLOUD_UNAVAILABLE);
+  function ncErrorMessage(err) {
+    const msg = err?.message || String(err || "");
+    // Browsers surface CORS / network blocks as TypeError with a generic message.
+    if (err?.name === "TypeError" || /Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+      return "Connection failed — enable CORS on your Nextcloud (see CORS.md)";
+    }
+    return msg || "Nextcloud request failed";
   }
 
   function updateSyncBadge() {
+    const on = !!(state.nc.enabled && state.nc.url && state.nc.username && state.nc.appPassword);
     el.syncBadge.hidden = false;
-    el.syncBadge.classList.add("off");
-    el.syncBadge.title = "Nextcloud sync unavailable";
-    el.syncBadge.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M24 15c0-2.64-2.05-4.78-4.65-4.96A7.49 7.49 0 0 0 12 4c-.7 0-1.37.1-2 .29L20.36 14.66A4.98 4.98 0 0 1 24 15zM3.71 4.56 2.29 5.97l2.6 2.6A5.98 5.98 0 0 0 0 14c0 3.31 2.69 6 6 6h11.17l2.86 2.86 1.41-1.41L3.71 4.56z"/></svg>`;
-    if (el.ncStatus) {
-      el.ncStatus.textContent =
-        "Unavailable — browsers block cross-origin WebDAV (CORS). Coming later via a same-origin proxy.";
-    }
+    el.syncBadge.classList.toggle("off", !on);
+    el.syncBadge.title = on ? "Nextcloud sync on" : "Nextcloud sync off";
+    el.syncBadge.innerHTML = on
+      ? `<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>`
+      : `<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M24 15c0-2.64-2.05-4.78-4.65-4.96A7.49 7.49 0 0 0 12 4c-.7 0-1.37.1-2 .29L20.36 14.66A4.98 4.98 0 0 1 24 15zM3.71 4.56 2.29 5.97l2.6 2.6A5.98 5.98 0 0 0 0 14c0 3.31 2.69 6 6 6h11.17l2.86 2.86 1.41-1.41L3.71 4.56z"/></svg>`;
+    if (el.ncStatus) el.ncStatus.textContent = on ? "On" : "Off — requires CORS on your server";
   }
 
   async function measureCacheBreakdown() {
-    const out = { appBytes: 0, offlineBytes: 0, modelLabel: "" };
+    const out = { appBytes: 0, modelBytes: 0, modelLabel: "", modelInstalled: false };
     if (!("caches" in window)) return out;
     const names = await caches.keys();
     for (const name of names) {
@@ -546,10 +551,16 @@ import {
       else out.appBytes += bucket;
     }
     const api = offlineApi();
-    if (api && out.modelBytes > 0) {
+    if (api) {
       try {
         const info = await api.getInstalledInfo();
-        if (info?.label) out.modelLabel = info.label;
+        if (info) {
+          out.modelInstalled = true;
+          if (info.label) out.modelLabel = info.label;
+          // Responses that refuse arrayBuffer() leave the measured size at 0;
+          // the recorded download size still describes what is on the device.
+          if (!out.modelBytes) out.modelBytes = info.bytes || 0;
+        }
       } catch {
         /* ignore */
       }
@@ -575,7 +586,7 @@ import {
     ]);
     const pct = quota ? Math.min(100, (usage / quota) * 100) : 0;
     el.storageFill.style.width = `${pct.toFixed(1)}%`;
-    el.storageLabel.textContent = "Site data";
+    el.storageLabel.textContent = state.nc.enabled ? "Local + Nextcloud" : "Site data";
     const totalLabel = quota
       ? `${formatBytes(usage)} / ${formatBytes(quota)}`
       : formatBytes(usage);
@@ -588,12 +599,22 @@ import {
         ? `Offline model (${cacheParts.modelLabel})`
         : "Offline model";
       const modelValue =
-        cacheParts.modelBytes > 0 ? formatBytes(cacheParts.modelBytes) : "Not downloaded";
+        cacheParts.modelBytes > 0
+          ? formatBytes(cacheParts.modelBytes)
+          : cacheParts.modelInstalled
+            ? "Installed"
+            : "Not downloaded";
       el.storageRows.innerHTML = `
         <div class="storage-row"><span>Recordings</span><span>${state.recordings.length} · ${formatBytes(recBytes)}</span></div>
         <div class="storage-row"><span>App cache</span><span>${formatBytes(cacheParts.appBytes)}</span></div>
         <div class="storage-row"><span>${escapeHtml(modelName)}</span><span>${escapeHtml(modelValue)}</span></div>
         <div class="storage-row"><span>Browser total</span><span>${totalLabel}</span></div>`;
+    }
+    if (state.nc.username) {
+      const letter = state.nc.username[0].toUpperCase();
+      if (el.avatarLetter) el.avatarLetter.textContent = letter;
+      if (el.sheetAvatar) el.sheetAvatar.textContent = letter;
+      if (el.sheetHello) el.sheetHello.textContent = `Hi, ${state.nc.username}`;
     }
   }
 
@@ -1694,21 +1715,71 @@ import {
     }
   }
 
-  /* —— Nextcloud (disabled until same-origin proxy) —— */
-  async function maybeAutoSync() {
-    /* no-op: browser CORS blocks cross-origin WebDAV */
+  /* —— Nextcloud —— */
+  async function maybeAutoSync(rec) {
+    if (!state.nc.enabled) return;
+    try {
+      await syncOne(rec);
+    } catch (err) {
+      console.warn(err);
+    }
   }
 
-  async function syncOne() {
-    showNcUnavailable();
+  async function syncOne(rec) {
+    const ext = (rec.mimeType || "").includes("mp4")
+      ? "m4a"
+      : (rec.mimeType || "").includes("wav")
+        ? "wav"
+        : "webm";
+    const name = `${rec.id}.${ext}`;
+    await Nextcloud.upload(state.nc, name, rec.blob, rec.mimeType);
+    if (rec.transcript) {
+      const meta = new Blob(
+        [
+          JSON.stringify(
+            { title: rec.title, transcript: rec.transcript, createdAt: rec.createdAt },
+            null,
+            2
+          ),
+        ],
+        { type: "application/json" }
+      );
+      await Nextcloud.upload(state.nc, `${rec.id}.json`, meta, "application/json");
+    }
+    rec.synced = true;
+    rec.syncName = name;
+    await RecDB.put(rec);
+    await refreshList();
   }
 
   async function syncAll() {
-    showNcUnavailable();
+    if (!state.nc.enabled) {
+      openNcModal();
+      return;
+    }
+    toast("Syncing…");
+    let ok = 0;
+    for (const rec of state.recordings) {
+      if (rec.synced) continue;
+      try {
+        await syncOne(rec);
+        ok++;
+      } catch (err) {
+        toast(ncErrorMessage(err));
+        return;
+      }
+    }
+    toast(ok ? `Synced ${ok}` : "Already up to date");
   }
 
   function openNcModal() {
-    showNcUnavailable();
+    const cfg = state.nc;
+    el.ncUrl.value = cfg.url || "";
+    el.ncUser.value = cfg.username || "";
+    el.ncPass.value = cfg.appPassword || "";
+    el.ncFolder.value = cfg.folder || "/Recorder";
+    el.ncEnabled.checked = !!cfg.enabled;
+    el.ncModal.hidden = false;
   }
 
   /* —— PIN / blackout —— */
@@ -1891,6 +1962,7 @@ import {
 
   async function deleteCurrent() {
     if (!confirm("Delete this recording?")) return;
+    // Local-only delete: keep Nextcloud copies so users can free phone storage.
     await RecDB.remove(state.currentId);
     stopAudio();
     el.detailMenu.hidden = true;
@@ -2023,7 +2095,7 @@ import {
     if (!rec) return;
     el.menuRecTitle.textContent = rec.title || formatTitle(rec.createdAt);
     el.menuMetaTime.textContent = formatLongDate(rec.createdAt);
-    el.menuMetaSync.textContent = "Nextcloud sync coming later (CORS)";
+    el.menuMetaSync.textContent = rec.synced ? "Backed up to Nextcloud" : "Not backed up";
     el.speedBtn.textContent = `${SPEEDS[state.speedIndex]}×`;
     await refreshOfflineInstalledFlag();
     if (el.retranscribeMenuBtn) {
@@ -2047,7 +2119,19 @@ import {
         el.searchInput.focus();
         toast("Search titles & transcripts");
       } else if (action === "retranscribe") retranscribe();
-      else if (action === "sync") showNcUnavailable();
+      else if (action === "sync") {
+        const rec = await RecDB.get(state.currentId);
+        if (!rec) return;
+        if (!state.nc.enabled) openNcModal();
+        else {
+          try {
+            await syncOne(rec);
+            toast("Uploaded");
+          } catch (err) {
+            toast(ncErrorMessage(err));
+          }
+        }
+      }
     });
   });
   el.renameBtn.addEventListener("click", renameCurrent);
@@ -2117,7 +2201,7 @@ import {
   });
   el.manageNcBtn.addEventListener("click", () => {
     el.profileSheet.hidden = true;
-    showNcUnavailable();
+    openNcModal();
   });
   function openSettings() {
     // Remember where we came from — leaving settings must not abandon an
@@ -2133,7 +2217,7 @@ import {
   });
   el.syncNowBtn.addEventListener("click", () => {
     el.profileSheet.hidden = true;
-    showNcUnavailable();
+    syncAll();
   });
   el.settingsBackBtn.addEventListener("click", () => {
     const back = state.settingsReturnView;
@@ -2144,7 +2228,7 @@ import {
   document.querySelectorAll("[data-settings]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const key = btn.dataset.settings;
-      if (key === "nextcloud") showNcUnavailable();
+      if (key === "nextcloud") openNcModal();
       else if (key === "theme") {
         const i = THEME_ORDER.indexOf(state.theme);
         state.theme = THEME_ORDER[(i + 1) % THEME_ORDER.length];
@@ -2413,10 +2497,34 @@ import {
     el.ncModal.hidden = true;
   });
   el.ncSaveBtn.addEventListener("click", () => {
+    state.nc = {
+      enabled: el.ncEnabled.checked,
+      url: el.ncUrl.value.trim(),
+      username: el.ncUser.value.trim(),
+      appPassword: el.ncPass.value,
+      folder: el.ncFolder.value.trim() || "/Recorder",
+    };
+    Nextcloud.saveConfig(state.nc);
     el.ncModal.hidden = true;
-    showNcUnavailable();
+    updateSyncBadge();
+    updateStorageCard();
+    toast("Nextcloud settings saved");
   });
-  el.ncTestBtn.addEventListener("click", () => showNcUnavailable());
+  el.ncTestBtn.addEventListener("click", async () => {
+    const cfg = {
+      enabled: true,
+      url: el.ncUrl.value.trim(),
+      username: el.ncUser.value.trim(),
+      appPassword: el.ncPass.value,
+      folder: el.ncFolder.value.trim() || "/Recorder",
+    };
+    try {
+      await Nextcloud.test(cfg);
+      toast("Connected");
+    } catch (err) {
+      toast(ncErrorMessage(err));
+    }
+  });
 
   el.pinCancelBtn.addEventListener("click", closePinModal);
   el.pinClearBtn.addEventListener("click", () => {
@@ -2514,7 +2622,34 @@ import {
     // A first install also claims this page, and reloading then throws away a
     // perfectly fresh shell — plus any recording that just started.
     const hadController = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.register("./sw.js", { type: "module" }).catch(() => {});
+
+    function askSwToPruneCaches() {
+      const ctrl = navigator.serviceWorker.controller;
+      if (ctrl) ctrl.postMessage({ type: "CLEAR_OBSOLETE_CACHES" });
+    }
+
+    navigator.serviceWorker
+      .register("./sw.js", { type: "module" })
+      .then((reg) => {
+        // Pick up new deploys without waiting for the browser's 24h check.
+        const poke = () => {
+          try {
+            reg.update();
+          } catch {
+            /* ignore */
+          }
+        };
+        poke();
+        document.addEventListener("visibilitychange", () => {
+          if (!document.hidden) {
+            poke();
+            askSwToPruneCaches();
+          }
+        });
+        askSwToPruneCaches();
+      })
+      .catch(() => {});
+
     navigator.serviceWorker.addEventListener("message", (event) => {
       if (event.data?.type !== "SW_UPDATED" || !hadController) return;
       const key = "recorder.swReloaded." + (event.data.cache || "");

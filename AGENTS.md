@@ -71,6 +71,7 @@ the IndexedDB copy — Nextcloud backups stay so users can free phone storage.
 | `offline-transcription.js` | Opt-in Vosk model management, PCM conversion, public transcription API |
 | `app.js` | UI, MediaRecorder, waveform, speech, playback, edit, PIN/blackout, wake lock |
 | `sw.js` | Offline cache — shell name stamped with `__BUILD_HASH__`; preserves transcription caches |
+| `_headers` | Cloudflare Pages: `no-cache` for `sw.js` / `sw-rules.js` so deploys activate + prune |
 | `optional/transcription/` | Attribution only in deploy; binaries optional local mirror |
 | `scripts/fetch-transcription-assets.sh` | Optional local CDN mirror for `python3 -m http.server` |
 | `scripts/build-site.sh` | Stamps `__BUILD_HASH__`, writes `_site/` (no model binaries) |
@@ -140,7 +141,9 @@ Do not fall back from browser → offline within a single recording session.
 Rules:
 
 - **Never** put `optional/transcription/**` in `ASSETS`.
-- On `activate`, delete obsolete shell caches but **keep** any cache whose name starts with `recorder-transcription-`.
+- On `activate` (and via a `CLEAR_OBSOLETE_CACHES` message), delete obsolete shell caches but **keep** any cache whose name starts with `recorder-transcription-`.
+- Failed `install` / `cache.addAll` deletes the partial shell cache so orphans do not accumulate across deploys.
+- Serve `sw.js` / `sw-rules.js` with `Cache-Control: no-cache` (`_headers`) so browsers detect new builds.
 - Do not let the generic shell `.js` handler absorb optional transcription URLs into the shell cache (`isOptionalTranscriptionPath`).
 - Installation is complete only after all required files are validated in the transcription cache.
 - Prefer Cache Storage (+ blob URLs for `Vosk.createModel`) over OPFS unless a future runtime requires file handles.

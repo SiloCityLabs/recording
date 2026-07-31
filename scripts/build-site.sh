@@ -25,6 +25,10 @@ echo "Build hash: $SHORT_SHA"
 # App shell
 cp index.html styles.css db.js nextcloud.js offline-transcription.js rec-lib.js sw-rules.js app.js sw.js manifest.webmanifest "$OUT/"
 cp .nojekyll CNAME "$OUT/"
+# Cloudflare Pages: keep SW scripts revalidating so activate can prune old caches.
+if [[ -f _headers ]]; then
+  cp _headers "$OUT/"
+fi
 
 # Stamp commit hash into menus + service worker cache name
 sed -i "s/__BUILD_HASH__/${SHORT_SHA}/g" "$OUT/index.html"
