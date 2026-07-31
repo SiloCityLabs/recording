@@ -529,7 +529,7 @@ import {
   }
 
   async function measureCacheBreakdown() {
-    const out = { appBytes: 0, offlineBytes: 0, modelLabel: "" };
+    const out = { appBytes: 0, modelBytes: 0, modelLabel: "", modelInstalled: false };
     if (!("caches" in window)) return out;
     const names = await caches.keys();
     for (const name of names) {
@@ -551,10 +551,16 @@ import {
       else out.appBytes += bucket;
     }
     const api = offlineApi();
-    if (api && out.modelBytes > 0) {
+    if (api) {
       try {
         const info = await api.getInstalledInfo();
-        if (info?.label) out.modelLabel = info.label;
+        if (info) {
+          out.modelInstalled = true;
+          if (info.label) out.modelLabel = info.label;
+          // Responses that refuse arrayBuffer() leave the measured size at 0;
+          // the recorded download size still describes what is on the device.
+          if (!out.modelBytes) out.modelBytes = info.bytes || 0;
+        }
       } catch {
         /* ignore */
       }
@@ -593,7 +599,11 @@ import {
         ? `Offline model (${cacheParts.modelLabel})`
         : "Offline model";
       const modelValue =
-        cacheParts.modelBytes > 0 ? formatBytes(cacheParts.modelBytes) : "Not downloaded";
+        cacheParts.modelBytes > 0
+          ? formatBytes(cacheParts.modelBytes)
+          : cacheParts.modelInstalled
+            ? "Installed"
+            : "Not downloaded";
       el.storageRows.innerHTML = `
         <div class="storage-row"><span>Recordings</span><span>${state.recordings.length} · ${formatBytes(recBytes)}</span></div>
         <div class="storage-row"><span>App cache</span><span>${formatBytes(cacheParts.appBytes)}</span></div>
