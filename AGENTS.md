@@ -69,7 +69,8 @@ the IndexedDB copy — Nextcloud backups stay so users can free phone storage.
 | `rec-lib.js` | Pure helpers (duration, summary, WAV edit, error copy) |
 | `sw-rules.js` | SW path/cache classification helpers |
 | `offline-transcription.js` | Opt-in Vosk model management, PCM conversion, public transcription API |
-| `app.js` | UI, MediaRecorder, waveform, speech, playback, edit, PIN/blackout, wake lock |
+| `app.js` | UI, MediaRecorder, waveform, speech, playback, edit, PIN/blackout, wake lock, haptic |
+| `haptic.mp3` | Tiny click sound — fallback only when `navigator.vibrate` is missing |
 | `sw.js` | Offline cache — shell name stamped with `__BUILD_HASH__`; preserves transcription caches |
 | `_headers` | Cloudflare Pages: `no-cache` for `sw.js` / `sw-rules.js` so deploys activate + prune |
 | `optional/transcription/` | Attribution only in deploy; binaries optional local mirror |
@@ -207,7 +208,7 @@ The README compares this PWA to Play Store Google Recorder (~121 MB app size; ~4
 python3 - <<'PY'
 import os, io, gzip
 files = []
-for p in ['index.html','styles.css','db.js','nextcloud.js','offline-transcription.js','rec-lib.js','sw-rules.js','app.js','sw.js','manifest.webmanifest','.nojekyll','CNAME']:
+for p in ['index.html','styles.css','db.js','nextcloud.js','offline-transcription.js','rec-lib.js','sw-rules.js','app.js','sw.js','haptic.mp3','manifest.webmanifest','.nojekyll','CNAME']:
     if os.path.exists(p): files.append(p)
 for dp, _, fs in os.walk('icons'):
     for f in fs: files.append(os.path.join(dp, f))

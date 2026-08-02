@@ -17,6 +17,7 @@ const ASSETS = [
   "./rec-lib.js?v=__BUILD_HASH__",
   "./sw-rules.js?v=__BUILD_HASH__",
   "./app.js?v=__BUILD_HASH__",
+  "./haptic.mp3",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

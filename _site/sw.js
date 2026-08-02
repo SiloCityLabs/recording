@@ -6,17 +6,18 @@ import {
   isShellRequest,
 } from "./sw-rules.js";
 
-const CACHE = "recorder-cb39890";
+const CACHE = "recorder-df3d016";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=cb39890",
-  "./db.js?v=cb39890",
-  "./nextcloud.js?v=cb39890",
-  "./offline-transcription.js?v=cb39890",
-  "./rec-lib.js?v=cb39890",
-  "./sw-rules.js?v=cb39890",
-  "./app.js?v=cb39890",
+  "./styles.css?v=df3d016",
+  "./db.js?v=df3d016",
+  "./nextcloud.js?v=df3d016",
+  "./offline-transcription.js?v=df3d016",
+  "./rec-lib.js?v=df3d016",
+  "./sw-rules.js?v=df3d016",
+  "./app.js?v=df3d016",
+  "./haptic.mp3",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

@@ -4,13 +4,14 @@ Google Recorder–style voice recorder as a standalone static PWA — no app sto
 
 **Live:** https://recording.silocitylabs.com
 
-My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **308 KB** (~159 KB transferred with gzip) — roughly **402× smaller**, fully offline once installed, and no store required.
+My journey to an appless life continues with PWAs. The Play Store Google Recorder sits at **~121 MB** on my phone (app size), with about **4.27 MB** of app data and **11.83 MB** of cache even with no recordings. This PWA ships the same kind of experience in about **306 KB** (~158 KB transferred with gzip) — roughly **405× smaller**, fully offline once installed, and no store required.
 
 Optional **on-device transcription** (Vosk) is available in Settings and downloads from free public CDNs only after you opt in (~40–50 MB). Browser and offline transcription are mutually exclusive. Optional **Nextcloud** backup uses WebDAV from your browser — your Nextcloud (or reverse proxy) must allow CORS for this PWA; see [CORS.md](CORS.md).
 
 ## Features
 
 - Record / pause / stop with live waveform
+- Light haptic on record controls (Vibration API when present; tiny `haptic.mp3` click only when vibrate is unavailable)
 - Waveform ↔ transcript toggle while recording
 - Live transcript via the browser Speech Recognition API (optional; exclusive with offline mode)
 - Optional private offline transcription (Vosk WASM + small per-language models for EN/ES/FR/DE) — disabled by default; one-time download; exclusive with browser mode
@@ -33,8 +34,8 @@ Optional **on-device transcription** (Vosk) is available in Settings and downloa
 | Google Recorder (Play Store app size) | ~121 MB |
 | Google Recorder app data (no recordings) | ~4.27 MB |
 | Google Recorder cache | ~11.83 MB |
-| This PWA base shell (all shipped shell files) | **~308 KB** (0.301 MB) |
-| Typical base transfer (gzip text + icons) | **~159 KB** |
+| This PWA base shell (all shipped shell files) | **~306 KB** (0.299 MB) |
+| Typical base transfer (gzip text + icons) | **~158 KB** |
 | Optional offline transcription runtime (`vosk.js`, from jsDelivr) | **~5.5 MB** |
 | Optional language model (one of EN/ES/FR/DE, from vosk-browser CDN) | **~33–44 MB** |
 | Optional download total (runtime + one model) | **~40–50 MB** |

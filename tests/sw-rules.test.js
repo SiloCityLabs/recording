@@ -35,6 +35,7 @@ describe("sw-rules", () => {
     expect(isShellRequest("https://x.test/styles.css")).toBe(true);
     expect(isShellRequest("https://x.test/")).toBe(true);
     expect(isShellRequest("https://x.test/icons/icon-192.png")).toBe(true);
+    expect(isShellRequest("https://x.test/haptic.mp3")).toBe(true);
     expect(isShellRequest("https://x.test/optional/transcription/vosk.js")).toBe(false);
     expect(isShellRequest("https://x.test/api/other")).toBe(false);
   });

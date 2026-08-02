@@ -1,6 +1,7 @@
 import { RecDB } from "./db.js";
 import { Nextcloud } from "./nextcloud.js";
 import { OfflineTranscription } from "./offline-transcription.js";
+import { isObsoleteShellCache, shellCacheName } from "./sw-rules.js";
 import {
   formatDuration,
   escapeHtml,
@@ -71,7 +72,10 @@ import {
     storageLabel: document.getElementById("storageLabel"),
     storageTotal: document.getElementById("storageTotal"),
     storageRows: document.getElementById("storageRows"),
+    storageDetail: document.getElementById("storageDetail"),
+    storageCard: document.getElementById("storageCard"),
     storageToggle: document.getElementById("storageToggle"),
+    clearCacheBtn: document.getElementById("clearCacheBtn"),
     detailVizCard: document.getElementById("detailVizCard"),
     syncNowBtn: document.getElementById("syncNowBtn"),
     openSettingsBtn: document.getElementById("openSettingsBtn"),
@@ -233,6 +237,51 @@ import {
     el.toast.classList.remove("is-sticky");
     el.toastAction.hidden = true;
     el.toastAction.onclick = null;
+  }
+
+  /**
+   * Prefer the Vibration API when the method exists. Only play haptic.mp3 when
+   * vibrate is missing (Safari / iOS / Firefox desktop). Do not fall back to
+   * audio just because vibrate() is a no-op on desktop Chromium.
+   */
+  const HAPTIC_URL = "./haptic.mp3";
+  let hapticAudio = null;
+
+  function vibrationApiAvailable() {
+    return typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+  }
+
+  function ensureHapticAudio() {
+    if (hapticAudio) return hapticAudio;
+    if (vibrationApiAvailable()) return null;
+    try {
+      hapticAudio = new Audio(HAPTIC_URL);
+      hapticAudio.preload = "auto";
+      hapticAudio.setAttribute("playsinline", "");
+    } catch {
+      hapticAudio = null;
+    }
+    return hapticAudio;
+  }
+
+  function haptic(pattern = 12) {
+    if (vibrationApiAvailable()) {
+      try {
+        navigator.vibrate(pattern);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const audio = ensureHapticAudio();
+    if (!audio) return;
+    try {
+      audio.currentTime = 0;
+      const play = audio.play();
+      if (play && typeof play.catch === "function") play.catch(() => {});
+    } catch {
+      /* ignore */
+    }
   }
 
   /**
@@ -528,6 +577,20 @@ import {
     if (el.ncStatus) el.ncStatus.textContent = on ? "On" : "Off — requires CORS on your server";
   }
 
+  function currentShellCacheName() {
+    const text = document.getElementById("buildHash")?.textContent || "";
+    const m = text.match(/Build\s+(\S+)/i);
+    return shellCacheName(m?.[1] || "dev");
+  }
+
+  // Download is ~1×; vosk-browser also unpacks into IndexedDB (~2× on disk).
+  // Use this only for download/confirm estimates — not measured usage rows.
+  const DOWNLOAD_DISK_FACTOR = 2;
+
+  function downloadDiskEstimateBytes(downloadBytes) {
+    return Math.max(0, Number(downloadBytes) || 0) * DOWNLOAD_DISK_FACTOR;
+  }
+
   async function measureCacheBreakdown() {
     const out = { appBytes: 0, modelBytes: 0, modelLabel: "", modelInstalled: false };
     if (!("caches" in window)) return out;
@@ -598,16 +661,20 @@ import {
       const modelName = cacheParts.modelLabel
         ? `Offline model (${cacheParts.modelLabel})`
         : "Offline model";
+      const modelBytes = cacheParts.modelBytes > 0 ? cacheParts.modelBytes : 0;
       const modelValue =
-        cacheParts.modelBytes > 0
-          ? formatBytes(cacheParts.modelBytes)
+        modelBytes > 0
+          ? formatBytes(modelBytes)
           : cacheParts.modelInstalled
             ? "Installed"
             : "Not downloaded";
+      const attributed = recBytes + cacheParts.appBytes + modelBytes;
+      const otherBytes = Math.max(0, usage - attributed);
       el.storageRows.innerHTML = `
         <div class="storage-row"><span>Recordings</span><span>${state.recordings.length} · ${formatBytes(recBytes)}</span></div>
         <div class="storage-row"><span>App cache</span><span>${formatBytes(cacheParts.appBytes)}</span></div>
         <div class="storage-row"><span>${escapeHtml(modelName)}</span><span>${escapeHtml(modelValue)}</span></div>
+        <div class="storage-row"><span>Other</span><span>${formatBytes(otherBytes)}</span></div>
         <div class="storage-row"><span>Browser total</span><span>${totalLabel}</span></div>`;
     }
     if (state.nc.username) {
@@ -616,6 +683,25 @@ import {
       if (el.sheetAvatar) el.sheetAvatar.textContent = letter;
       if (el.sheetHello) el.sheetHello.textContent = `Hi, ${state.nc.username}`;
     }
+  }
+
+  async function clearObsoleteAppCaches() {
+    if (!("caches" in window)) {
+      toast("Cache API not available");
+      return;
+    }
+    const keep = currentShellCacheName();
+    const keys = await caches.keys();
+    const doomed = keys.filter((k) => isObsoleteShellCache(k, keep));
+    await Promise.all(doomed.map((k) => caches.delete(k)));
+    const ctrl = navigator.serviceWorker?.controller;
+    if (ctrl) ctrl.postMessage({ type: "CLEAR_OBSOLETE_CACHES" });
+    await updateStorageCard();
+    toast(
+      doomed.length
+        ? `Cleared ${doomed.length} old app cache${doomed.length === 1 ? "" : "s"}`
+        : "App cache already clean"
+    );
   }
 
   /* —— Wake lock —— */
@@ -1226,6 +1312,7 @@ import {
       state.mediaRecorder.start(250);
       state.recording = true;
       state.startedAt = performance.now();
+      haptic(15);
       if (el.recTitle) el.recTitle.textContent = formatTitle(Date.now());
       el.recDot?.classList.remove("paused");
       const pauseLabel = el.pauseBtn?.querySelector("span");
@@ -1266,6 +1353,7 @@ import {
 
   async function togglePause() {
     if (!state.mediaRecorder || !state.recording) return;
+    haptic(10);
     if (state.paused) {
       state.mediaRecorder.resume();
       await ensureAudioContextRunning(state.audioCtx);
@@ -2030,6 +2118,7 @@ import {
   el.recordFab.addEventListener("click", startRecording);
   el.pauseBtn.addEventListener("click", togglePause);
   el.stopBtn.addEventListener("click", async () => {
+    haptic(20);
     const rec = await stopRecording();
     await refreshList();
     if (rec) openDetail(rec.id);
@@ -2085,8 +2174,15 @@ import {
     el.storageToggle.addEventListener("click", () => {
       const next = el.storageToggle.getAttribute("aria-expanded") !== "true";
       el.storageToggle.setAttribute("aria-expanded", next ? "true" : "false");
-      el.storageToggle.classList.toggle("expanded", next);
-      if (el.storageRows) el.storageRows.hidden = !next;
+      el.storageCard?.classList.toggle("expanded", next);
+      if (el.storageDetail) el.storageDetail.hidden = !next;
+      if (next) updateStorageCard();
+    });
+  }
+  if (el.clearCacheBtn) {
+    el.clearCacheBtn.addEventListener("click", () => {
+      haptic(12);
+      clearObsoleteAppCaches().catch(() => toast("Could not clear cache"));
     });
   }
 
@@ -2255,7 +2351,7 @@ import {
       btn.setAttribute("role", "option");
       btn.setAttribute("aria-selected", lang.id === state.lang ? "true" : "false");
       const downloadBytes = api ? api.approximateDownloadBytes(lang.id) : 0;
-      const sizeLabel = api ? api.formatBytes(downloadBytes) : "";
+      const sizeLabel = api ? api.formatBytes(downloadDiskEstimateBytes(downloadBytes)) : "";
       btn.innerHTML = `
         <span class="lang-option-label">${escapeHtml(lang.label)}</span>
         <span class="lang-option-meta">${escapeHtml(sizeLabel ? `Offline ~${sizeLabel}` : "")}</span>`;
@@ -2291,9 +2387,9 @@ import {
       const nextModel = api.langEntry(nextId).modelId;
       if (installed && installed.modelId !== nextModel) {
         const oldSize = api.formatBytes(installed.bytes || api.approximateDownloadBytes(installed.lang));
-        const newSize = api.formatBytes(api.approximateDownloadBytes(nextId));
+        const newSize = api.formatBytes(downloadDiskEstimateBytes(api.approximateDownloadBytes(nextId)));
         const ok = confirm(
-          `Switching to ${nextLabel} will replace the offline ${installed.label} model (~${oldSize} stored) with a ${nextLabel} model (about ${newSize} download). Continue?`
+          `Switching to ${nextLabel} will replace the offline ${installed.label} model (~${oldSize} stored) with a ${nextLabel} model (about ${newSize} on disk). Continue?`
         );
         if (!ok) return;
         try {
@@ -2360,7 +2456,7 @@ import {
     const api = offlineApi();
     if (!api || !el.offlineTranscribeSub) return;
     const status = await api.getStatus(state.lang);
-    const sizeLabel = api.formatBytes(status.downloadBytes);
+    const sizeLabel = api.formatBytes(downloadDiskEstimateBytes(status.downloadBytes));
     const storedLabel = api.formatBytes(status.storedBytes);
     const langName = status.langLabel || langLabel(state.lang);
 
@@ -2381,8 +2477,8 @@ import {
       el.offlineTranscribeBtn.textContent = "Delete offline model";
       el.offlineTranscribeBtn.classList.add("danger-text");
       el.offlineTranscribeSub.textContent = status.enabled
-        ? `${status.modelLabel} · ~${storedLabel || sizeLabel} stored. Transcripts run on-device after each recording (browser live transcription is off).`
-        : `${status.modelLabel} is installed (~${storedLabel || sizeLabel}) but off. Enable to use on-device transcription instead of the browser.`;
+        ? `${status.modelLabel} · ${storedLabel || sizeLabel} stored. Transcripts run on-device after each recording (browser live transcription is off).`
+        : `${status.modelLabel} is installed (${storedLabel || sizeLabel}) but off. Enable to use on-device transcription instead of the browser.`;
       return;
     }
 
@@ -2392,7 +2488,7 @@ import {
       el.offlineTranscribeBtn.textContent = "Download and enable";
       el.offlineTranscribeBtn.classList.remove("danger-text");
       const oldSize = api.formatBytes(status.installedInfo.bytes || 0);
-      el.offlineTranscribeSub.textContent = `Current language is ${langName} (~${sizeLabel}). An offline ${status.installedInfo.label} model (~${oldSize || "—"}) is still stored — change language back or download ${langName} to replace it.`;
+      el.offlineTranscribeSub.textContent = `Current language is ${langName} (~${sizeLabel} on disk). An offline ${status.installedInfo.label} model (${oldSize || "—"}) is still stored — change language back or download ${langName} to replace it.`;
       return;
     }
 
@@ -2400,7 +2496,7 @@ import {
     el.offlineTranscribeBtn.hidden = false;
     el.offlineTranscribeBtn.textContent = "Download and enable";
     el.offlineTranscribeBtn.classList.remove("danger-text");
-    el.offlineTranscribeSub.textContent = `Transcribe privately on this device after recording (instead of browser live transcription). ${langName} model — one-time download of approximately ${sizeLabel}.`;
+    el.offlineTranscribeSub.textContent = `Transcribe privately on this device after recording (instead of browser live transcription). ${langName} model — about ${sizeLabel} on disk after install (download + unpack).`;
   }
 
   el.offlineTranscribeToggle?.addEventListener("change", () => {
@@ -2442,7 +2538,7 @@ import {
     // Replacing a different-language install: clear first so download starts clean.
     if (status.installedInfo && status.conflicts) {
       const ok = confirm(
-        `Download ${status.langLabel} (~${api.formatBytes(status.downloadBytes)}) and replace the stored ${status.installedInfo.label} model?`
+        `Download ${status.langLabel} (~${api.formatBytes(downloadDiskEstimateBytes(status.downloadBytes))} on disk) and replace the stored ${status.installedInfo.label} model?`
       );
       if (!ok) return;
     }

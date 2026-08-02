@@ -25,6 +25,9 @@ echo "Build hash: $SHORT_SHA"
 # App shell
 cp index.html styles.css db.js nextcloud.js offline-transcription.js rec-lib.js sw-rules.js app.js sw.js manifest.webmanifest "$OUT/"
 cp .nojekyll CNAME "$OUT/"
+if [[ -f haptic.mp3 ]]; then
+  cp haptic.mp3 "$OUT/"
+fi
 # Cloudflare Pages: keep SW scripts revalidating so activate can prune old caches.
 if [[ -f _headers ]]; then
   cp _headers "$OUT/"

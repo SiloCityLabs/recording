@@ -33,6 +33,7 @@ export function isShellRequest(url) {
       path.endsWith(".css") ||
       path.endsWith(".webmanifest") ||
       path.endsWith(".html") ||
+      path.endsWith(".mp3") ||
       path.endsWith("/") ||
       /\/icons\//.test(path)
     );

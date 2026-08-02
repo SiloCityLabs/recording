@@ -1016,15 +1016,25 @@ button {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  appearance: none;
   border: 0;
   background: var(--bg-card);
   border-radius: var(--radius-sm);
   padding: 14px;
   margin: 0 0 14px;
+  color: inherit;
+}
+.storage-toggle {
+  display: block;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
   font: inherit;
   text-align: left;
   color: inherit;
+  cursor: pointer;
 }
 .storage-top {
   display: flex;
@@ -1060,14 +1070,14 @@ button {
   font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
 }
+.storage-detail[hidden] {
+  display: none;
+}
 .storage-rows {
   margin-top: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-.storage-rows[hidden] {
-  display: none;
 }
 .storage-row {
   display: flex;
@@ -1079,6 +1089,38 @@ button {
 }
 .storage-row span:last-child {
   color: var(--text-muted);
+}
+.storage-clear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 16px 0 0;
+  min-height: 40px;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 55%, transparent);
+  background: var(--bg-search);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.08s ease, border-color 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.sheet .storage-clear-btn {
+  margin: 16px 0 0;
+}
+.storage-clear-btn:hover {
+  border-color: var(--text-muted);
+}
+.storage-clear-btn:active {
+  transform: scale(0.98);
+  background: color-mix(in srgb, var(--text-muted) 22%, var(--bg-search));
+  border-color: var(--text);
 }
 .sheet-list {
   display: flex;

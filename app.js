@@ -240,6 +240,51 @@ import {
   }
 
   /**
+   * Prefer the Vibration API when the method exists. Only play haptic.mp3 when
+   * vibrate is missing (Safari / iOS / Firefox desktop). Do not fall back to
+   * audio just because vibrate() is a no-op on desktop Chromium.
+   */
+  const HAPTIC_URL = "./haptic.mp3";
+  let hapticAudio = null;
+
+  function vibrationApiAvailable() {
+    return typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+  }
+
+  function ensureHapticAudio() {
+    if (hapticAudio) return hapticAudio;
+    if (vibrationApiAvailable()) return null;
+    try {
+      hapticAudio = new Audio(HAPTIC_URL);
+      hapticAudio.preload = "auto";
+      hapticAudio.setAttribute("playsinline", "");
+    } catch {
+      hapticAudio = null;
+    }
+    return hapticAudio;
+  }
+
+  function haptic(pattern = 12) {
+    if (vibrationApiAvailable()) {
+      try {
+        navigator.vibrate(pattern);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const audio = ensureHapticAudio();
+    if (!audio) return;
+    try {
+      audio.currentTime = 0;
+      const play = audio.play();
+      if (play && typeof play.catch === "function") play.catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /**
    * @param {string} msg
    * @param {{ label: string, onClick: function } | { sticky?: boolean, duration?: number }} [opts]
    *   Undo actions use `{ label, onClick }`. Sticky progress uses `{ sticky: true }`.
@@ -1267,6 +1312,7 @@ import {
       state.mediaRecorder.start(250);
       state.recording = true;
       state.startedAt = performance.now();
+      haptic(15);
       if (el.recTitle) el.recTitle.textContent = formatTitle(Date.now());
       el.recDot?.classList.remove("paused");
       const pauseLabel = el.pauseBtn?.querySelector("span");
@@ -1307,6 +1353,7 @@ import {
 
   async function togglePause() {
     if (!state.mediaRecorder || !state.recording) return;
+    haptic(10);
     if (state.paused) {
       state.mediaRecorder.resume();
       await ensureAudioContextRunning(state.audioCtx);
@@ -2071,6 +2118,7 @@ import {
   el.recordFab.addEventListener("click", startRecording);
   el.pauseBtn.addEventListener("click", togglePause);
   el.stopBtn.addEventListener("click", async () => {
+    haptic(20);
     const rec = await stopRecording();
     await refreshList();
     if (rec) openDetail(rec.id);
@@ -2133,6 +2181,7 @@ import {
   }
   if (el.clearCacheBtn) {
     el.clearCacheBtn.addEventListener("click", () => {
+      haptic(12);
       clearObsoleteAppCaches().catch(() => toast("Could not clear cache"));
     });
   }
